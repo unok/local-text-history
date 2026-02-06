@@ -1,0 +1,24 @@
+# Binaries
+file-history
+bin/
+
+# Config (contains personal paths)
+config.json
+
+# Web build artifacts and dependencies
+web/node_modules/
+web/dist/
+
+# TAKT reports
+.takt/reports/
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+
+# Build cache
+web/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store

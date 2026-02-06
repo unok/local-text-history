@@ -1,0 +1,12 @@
+[Unit]
+Description=File History Tracker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/file-history --config %h/.config/file-history/config.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
