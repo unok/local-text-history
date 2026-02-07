@@ -9,8 +9,12 @@ config.json
 web/node_modules/
 web/dist/
 
-# TAKT reports
-.takt/reports/
+# TAKT
+.takt/
+*-review.md
+
+# node_modules (root level, e.g. vitest cache)
+/node_modules/
 
 # SQLite
 *.db
