@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes, formatDate } from './format'
+import { formatBytes, formatDateTime } from './format'
 
 describe('formatBytes', () => {
   it('returns "0" for zero', () => {
@@ -35,19 +35,26 @@ describe('formatBytes', () => {
   })
 })
 
-describe('formatDate', () => {
-  it('converts unix timestamp to locale string', () => {
+// Tests run with TZ=UTC (configured in vite.config.ts)
+describe('formatDateTime', () => {
+  it('formats unix timestamp as YYYY/MM/DD HH:MM:SS', () => {
     // 2024-01-01T00:00:00Z = 1704067200
-    const result = formatDate(1704067200)
-    // The exact format depends on locale, but it should be a non-empty string
-    expect(result).toBeTruthy()
-    expect(typeof result).toBe('string')
+    expect(formatDateTime(1704067200)).toBe('2024/01/01 00:00:00')
+  })
+
+  it('zero-pads single-digit month, day, hours, minutes, seconds', () => {
+    // 2024-03-05T06:08:09Z = 1709618889
+    expect(formatDateTime(1709618889)).toBe('2024/03/05 06:08:09')
   })
 
   it('handles zero timestamp (epoch)', () => {
-    const result = formatDate(0)
-    expect(result).toBeTruthy()
-    // Should represent Jan 1, 1970 in some locale format
-    expect(typeof result).toBe('string')
+    expect(formatDateTime(0)).toBe('1970/01/01 00:00:00')
+  })
+
+  it('always matches YYYY/MM/DD HH:MM:SS format', () => {
+    const timestamps = [0, 1704067200, 1709618889, 1700000000]
+    for (const ts of timestamps) {
+      expect(formatDateTime(ts)).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
+    }
   })
 })

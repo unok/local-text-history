@@ -9,4 +9,9 @@ export default defineConfig({
       '/api': 'http://localhost:9876',
     },
   },
+  test: {
+    env: {
+      TZ: 'UTC',
+    },
+  },
 })

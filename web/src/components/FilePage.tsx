@@ -8,7 +8,7 @@ import {
   type Snapshot,
   type RenameRecord,
 } from '../lib/api'
-import { formatDate, formatBytes } from '../lib/format'
+import { formatDateTime, formatBytes } from '../lib/format'
 import { navigate, replaceUrl } from '../lib/router'
 import DiffView from './DiffView'
 
@@ -199,7 +199,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <p className="text-sm text-gray-800 dark:text-gray-100">
-                          {formatDate(snap.timestamp)}
+                          {formatDateTime(snap.timestamp)}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           {formatBytes(snap.size)} &middot;{' '}

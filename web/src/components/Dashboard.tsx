@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useHistory, useStripWatchDir } from '../lib/api'
-import { formatDate, formatBytes } from '../lib/format'
+import { formatDateTime, formatBytes } from '../lib/format'
 import { navigate, replaceUrl } from '../lib/router'
 
 const PAGE_SIZE = 50
@@ -82,7 +82,7 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
                   }
                 >
                   <td className="px-3 py-2 text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                    {formatDate(entry.timestamp)}
+                    {formatDateTime(entry.timestamp)}
                   </td>
                   <td className="px-3 py-2 font-mono truncate">
                     {entry.entryType === 'rename' ? (
