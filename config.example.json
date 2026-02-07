@@ -4,9 +4,5 @@
   "port": 9876,
   "dbPath": "~/.local/share/file-history/history.db",
   "maxFileSize": 1048576,
-  "maxSnapshots": 0,
-  "basicAuth": {
-    "username": "admin",
-    "password": "changeme"
-  }
+  "maxSnapshots": 0
 }
