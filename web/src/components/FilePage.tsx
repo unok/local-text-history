@@ -9,7 +9,7 @@ import {
   type RenameRecord,
 } from '../lib/api'
 import { formatDate, formatBytes } from '../lib/format'
-import { navigate } from '../lib/router'
+import { navigate, replaceUrl } from '../lib/router'
 import DiffView from './DiffView'
 
 interface FilePageProps {
@@ -107,22 +107,22 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
 
   function handleRowClick(snapId: string) {
     // Default: show diff with previous (auto-resolve from)
-    navigate(`/files/${fileId}/diff/${snapId}`)
+    replaceUrl(`/files/${fileId}/diff/${snapId}`)
   }
 
   function handleSetFrom(e: React.MouseEvent, snapId: string) {
     e.stopPropagation()
     if (toId) {
-      navigate(`/files/${fileId}/diff/${snapId}/${toId}`)
+      replaceUrl(`/files/${fileId}/diff/${snapId}/${toId}`)
     }
   }
 
   function handleSetTo(e: React.MouseEvent, snapId: string) {
     e.stopPropagation()
     if (resolvedFromId) {
-      navigate(`/files/${fileId}/diff/${resolvedFromId}/${snapId}`)
+      replaceUrl(`/files/${fileId}/diff/${resolvedFromId}/${snapId}`)
     } else {
-      navigate(`/files/${fileId}/diff/${snapId}`)
+      replaceUrl(`/files/${fileId}/diff/${snapId}`)
     }
   }
 
