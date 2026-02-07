@@ -61,5 +61,5 @@ func isBinary(data []byte) bool {
 	if checkLen > binaryCheckSize {
 		checkLen = binaryCheckSize
 	}
-	return bytes.ContainsRune(data[:checkLen], 0)
+	return bytes.IndexByte(data[:checkLen], 0) >= 0
 }
