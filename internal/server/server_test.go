@@ -907,6 +907,132 @@ func TestBasicAuth_AcceptsValidCredentials(t *testing.T) {
 	}
 }
 
+func TestHandleHistory_QueryFilter(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	if _, err := database.SaveSnapshot("/tmp/project/src/main.go", []byte("package main")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/tmp/project/src/util.go", []byte("package util")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Given: query matching "main"
+	req := httptest.NewRequest("GET", "/api/history?q=main", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 2 {
+		t.Errorf("got %d entries, want 2", len(result.Entries))
+	}
+}
+
+func TestHandleHistory_QueryFilterWithPagination(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	for i := range 5 {
+		path := fmt.Sprintf("/tmp/srv_qp%d.go", i)
+		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Non-matching entry
+	if _, err := database.SaveSnapshot("/tmp/other.go", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Page 1: limit=3, query=srv_qp
+	req := httptest.NewRequest("GET", "/api/history?q=srv_qp&limit=3&offset=0", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("page1: status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var page1 struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&page1); err != nil {
+		t.Fatal(err)
+	}
+	if len(page1.Entries) != 3 {
+		t.Errorf("page1: got %d entries, want 3", len(page1.Entries))
+	}
+	if !page1.HasMore {
+		t.Error("page1: hasMore = false, want true")
+	}
+
+	// Page 2: limit=3, offset=3, query=srv_qp
+	req = httptest.NewRequest("GET", "/api/history?q=srv_qp&limit=3&offset=3", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("page2: status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var page2 struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&page2); err != nil {
+		t.Fatal(err)
+	}
+	if len(page2.Entries) != 2 {
+		t.Errorf("page2: got %d entries, want 2", len(page2.Entries))
+	}
+	if page2.HasMore {
+		t.Error("page2: hasMore = true, want false")
+	}
+}
+
+func TestHandleHistory_EmptyQueryReturnsAll(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	if _, err := database.SaveSnapshot("/tmp/eqr1.go", []byte("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/tmp/eqr2.go", []byte("c2")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Given: empty q parameter
+	req := httptest.NewRequest("GET", "/api/history?q=", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 2 {
+		t.Errorf("got %d entries, want 2", len(result.Entries))
+	}
+}
+
 func TestBasicAuth_NilConfigSkipsAuth(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	database, err := db.New(dbPath, 0)

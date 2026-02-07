@@ -292,7 +292,7 @@ func TestSearchFiles_Pagination(t *testing.T) {
 func TestGetRecentSnapshots_Empty(t *testing.T) {
 	d := newTestDB(t, 0)
 
-	entries, err := d.GetRecentSnapshots(50, 0)
+	entries, err := d.GetRecentSnapshots(50, 0, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestGetRecentSnapshots_WithData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := d.GetRecentSnapshots(50, 0)
+	entries, err := d.GetRecentSnapshots(50, 0, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestGetRecentSnapshots_Limit(t *testing.T) {
 		}
 	}
 
-	entries, err := d.GetRecentSnapshots(3, 0)
+	entries, err := d.GetRecentSnapshots(3, 0, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 		}
 	}
 
-	page1, err := d.GetRecentSnapshots(2, 0)
+	page1, err := d.GetRecentSnapshots(2, 0, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 0) error: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 		t.Errorf("page1: got %d entries, want 2", len(page1))
 	}
 
-	page2, err := d.GetRecentSnapshots(2, 2)
+	page2, err := d.GetRecentSnapshots(2, 2, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 2) error: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 		t.Error("page1 and page2 overlap")
 	}
 
-	page3, err := d.GetRecentSnapshots(2, 4)
+	page3, err := d.GetRecentSnapshots(2, 4, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 4) error: %v", err)
 	}
@@ -982,7 +982,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 
 	// Verify GetRecentSnapshots works across migrated and new data
-	entries, err := d.GetRecentSnapshots(50, 0)
+	entries, err := d.GetRecentSnapshots(50, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1079,7 +1079,7 @@ func TestGetRecentSnapshots_IncludesRenames(t *testing.T) {
 		t.Fatalf("SaveRename() error: %v", err)
 	}
 
-	entries, err := d.GetRecentSnapshots(50, 0)
+	entries, err := d.GetRecentSnapshots(50, 0, "")
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1135,7 +1135,7 @@ func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	page1, err := d.GetRecentSnapshots(3, 0)
+	page1, err := d.GetRecentSnapshots(3, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1143,7 +1143,7 @@ func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
 		t.Errorf("page1: got %d entries, want 3", len(page1))
 	}
 
-	page2, err := d.GetRecentSnapshots(3, 3)
+	page2, err := d.GetRecentSnapshots(3, 3, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1198,5 +1198,152 @@ func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
 	}
 	if stats.TotalFiles != n {
 		t.Errorf("TotalFiles = %d, want %d", stats.TotalFiles, n)
+	}
+}
+
+func TestGetRecentSnapshots_QueryFiltersSaveEntries(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	if _, err := d.SaveSnapshot("/tmp/project/src/main.go", []byte("package main")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/project/src/util.go", []byte("package util")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Given: query that matches only "main"
+	entries, err := d.GetRecentSnapshots(50, 0, "main")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+
+	// Then: should return 2 entries (main.go and main_test.go)
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	for _, e := range entries {
+		if e.EntryType != "save" {
+			t.Errorf("unexpected entryType %s", e.EntryType)
+		}
+	}
+
+	// Given: query that matches only "util"
+	entries, err = d.GetRecentSnapshots(50, 0, "util")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].FilePath != "/tmp/project/src/util.go" {
+		t.Errorf("FilePath = %s, want /tmp/project/src/util.go", entries[0].FilePath)
+	}
+
+	// Given: query that matches nothing
+	entries, err = d.GetRecentSnapshots(50, 0, "nonexistent")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("got %d entries, want 0", len(entries))
+	}
+}
+
+func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create files and renames
+	if _, err := d.SaveSnapshot("/tmp/project/old_name.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/project/unrelated.go", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveRename("/tmp/project/old_name.go", "/tmp/project/new_name.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Given: query matching "old_name" — should match the rename entry via old_path
+	entries, err := d.GetRecentSnapshots(50, 0, "old_name")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (1 save + 1 rename)", len(entries))
+	}
+
+	// Given: query matching "new_name" — should match the rename entry via new_path
+	entries, err = d.GetRecentSnapshots(50, 0, "new_name")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (rename)", len(entries))
+	}
+	if entries[0].EntryType != "rename" {
+		t.Errorf("EntryType = %s, want rename", entries[0].EntryType)
+	}
+
+	// Given: query matching "unrelated" — should only match the save
+	entries, err = d.GetRecentSnapshots(50, 0, "unrelated")
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].EntryType != "save" {
+		t.Errorf("EntryType = %s, want save", entries[0].EntryType)
+	}
+}
+
+func TestGetRecentSnapshots_QueryWithPagination(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create 5 files matching "pagq"
+	for i := range 5 {
+		path := fmt.Sprintf("/tmp/pagq%d.go", i)
+		if _, err := d.SaveSnapshot(path, []byte(fmt.Sprintf("content-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Create 2 files NOT matching "pagq"
+	if _, err := d.SaveSnapshot("/tmp/other1.go", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/other2.go", []byte("y")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Given: query "pagq" with limit 3
+	page1, err := d.GetRecentSnapshots(3, 0, "pagq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) != 3 {
+		t.Errorf("page1: got %d entries, want 3", len(page1))
+	}
+
+	// Given: query "pagq" with limit 3, offset 3
+	page2, err := d.GetRecentSnapshots(3, 3, "pagq")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 2 {
+		t.Errorf("page2: got %d entries, want 2", len(page2))
+	}
+
+	// Ensure no overlap
+	ids := make(map[string]bool)
+	for _, e := range page1 {
+		ids[e.SnapshotID] = true
+	}
+	for _, e := range page2 {
+		if ids[e.SnapshotID] {
+			t.Errorf("overlap: %s found in both pages", e.SnapshotID)
+		}
 	}
 }

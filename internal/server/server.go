@@ -131,7 +131,9 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
-	entries, err := s.db.GetRecentSnapshots(limit+1, offset)
+	query := r.URL.Query().Get("q")
+
+	entries, err := s.db.GetRecentSnapshots(limit+1, offset, query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
