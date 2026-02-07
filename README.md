@@ -1,15 +1,18 @@
 # File History Tracker
 
-JetBrains Local History 相当のファイル履歴追跡ツール。指定ディレクトリ内のテキストファイルの変更を検知し、SQLite にスナップショットとして保存。Web UI でパス検索・差分表示・ダウンロードが可能な単一バイナリ。
+JetBrains Local History 相当のファイル履歴追跡ツール。指定ディレクトリ内のテキストファイルの変更をリアルタイムに検知し、スナップショットとして SQLite に保存します。Web UI で履歴の検索・差分表示・ファイル復元が可能な単一バイナリです。
 
-## 機能
+## 主な機能
 
-- **ファイル監視**: fsnotify によるリアルタイムファイル変更検知（起動後の新規ファイルも自動検知）
-- **スナップショット保存**: zstd 圧縮 + SHA-256 重複スキップ付き SQLite(WAL モード)
-- **バイナリ判定**: NUL バイト方式で自動判定し、バイナリファイルは監視対象から除外
-- **リアルタイム通知**: SSE（Server-Sent Events）で変更をブラウザにプッシュ
-- **Web UI**: 検出履歴フィード、ファイル検索、スナップショットタイムライン、1-click 差分表示(side-by-side / inline)
-- **単一バイナリ**: Go embed で React SPA を同梱
+- **ファイル監視**: fsnotify によるリアルタイム変更検知（新規ディレクトリも自動監視）
+- **スナップショット保存**: zstd 圧縮 + SHA-256 による重複スキップ（SQLite WAL モード）
+- **リネーム追跡**: ファイル名変更を自動検知し、リネーム履歴を記録
+- **バイナリファイル自動除外**: NUL バイト方式で自動判定し、バイナリファイルは監視対象から除外
+- **Web UI**: 履歴フィード、パス検索、スナップショットタイムライン、差分表示（side-by-side / inline）
+- **SSE リアルタイム通知**: Server-Sent Events で変更をブラウザにプッシュ
+- **データベースダウンロード**: Web UI から DB のスナップショットをダウンロード可能
+- **Basic 認証**: オプションで HTTP Basic 認証を有効化
+- **単一バイナリ**: Go embed で React SPA を同梱。デプロイはバイナリ1つのみ
 
 ## 必要環境
 
@@ -17,7 +20,9 @@ JetBrains Local History 相当のファイル履歴追跡ツール。指定デ�
 - Node.js 20+
 - GCC（sqlite3 ビルド用）
 
-## ビルド
+## クイックスタート
+
+### ビルド
 
 ```bash
 make build
@@ -25,17 +30,16 @@ make build
 
 生成バイナリ: `bin/file-history`
 
-## 使い方
-
-### 1. 設定ファイルの作成
+### 設定ファイルの作成
 
 ```bash
+mkdir -p ~/.config/file-history
 cp config.example.json ~/.config/file-history/config.json
 ```
 
 `watchDirs` を監視したいディレクトリに変更してください。
 
-### 2. 起動
+### 起動
 
 ```bash
 ./bin/file-history --config ~/.config/file-history/config.json
@@ -43,25 +47,45 @@ cp config.example.json ~/.config/file-history/config.json
 
 ブラウザで `http://localhost:9876` を開きます。
 
-### 3. systemd で自動起動（ユーザモード）
+### systemd で自動起動（ユーザーモード）
 
 ```bash
+cp bin/file-history ~/.local/bin/
 cp file-history.service ~/.config/systemd/user/
 systemctl --user enable --now file-history
 ```
 
-## 設定項目
+systemd ユニットファイルはホームディレクトリ（`%h`）内のパスを参照します:
+- バイナリ: `~/.local/bin/file-history`
+- 設定: `~/.config/file-history/config.json`
+
+## 設定リファレンス
 
 | 項目 | 型 | デフォルト | 説明 |
 |------|------|-----------|------|
-| `watchDirs` | `string[]` | (必須) | 監視するディレクトリ |
+| `watchDirs` | `string[]` | （必須） | 監視するディレクトリ |
 | `debounceSec` | `int` | `2` | デバウンス秒数（ファイルごと独立） |
+| `bindAddress` | `string` | `0.0.0.0` | HTTP サーバーのバインドアドレス |
 | `port` | `int` | `9876` | HTTP サーバーポート |
 | `dbPath` | `string` | `~/.local/share/file-history/history.db` | SQLite データベースパス |
-| `extensions` | `string[]` | (未指定) | 監視対象の拡張子。未指定時はバイナリ判定のみで全テキストファイルを監視 |
-| `excludePatterns` | `string[]` | (下記参照) | 除外パターン（`**` 対応） |
+| `extensions` | `string[]` | （未指定） | 監視対象の拡張子。未指定時はバイナリ判定のみで全テキストファイルを監視 |
+| `excludePatterns` | `string[]` | （下記参照） | 除外パターン（`**` 対応） |
 | `maxFileSize` | `int` | `1048576` | 最大ファイルサイズ（バイト） |
 | `maxSnapshots` | `int` | `0` | ファイルあたり最大スナップショット数（0=無制限） |
+| `basicAuth` | `object` | （未指定） | Basic 認証の設定。`username` と `password` を指定 |
+
+### basicAuth の設定例
+
+```json
+{
+  "basicAuth": {
+    "username": "admin",
+    "password": "your-password"
+  }
+}
+```
+
+`basicAuth` を指定しない場合、認証なしで動作します。
 
 ### excludePatterns のデフォルト値
 
@@ -69,20 +93,19 @@ systemctl --user enable --now file-history
 
 `**/node_modules/**`, `**/.git/**`, `**/vendor/**`, `**/dist/**`, `**/build/**`, `**/.next/**`, `**/__pycache__/**`, `**/target/**`, `**/*.min.js`, `**/*.min.css`, `**/*.lock`, `**/package-lock.json`, `**/pnpm-lock.yaml`
 
-## API
+## Web UI の使い方
 
-| メソッド | パス | 説明 |
-|----------|------|------|
-| GET | `/api/history?limit=50` | 直近の変更検出一覧（トップ画面用） |
-| GET | `/api/events` | SSE ストリーム（リアルタイム変更通知） |
-| GET | `/api/files?q=xxx&limit=20&offset=0` | パス部分一致検索（`q` 空で全ファイルを更新日時順に返す） |
-| GET | `/api/files/:id` | ファイル詳細 |
-| GET | `/api/files/:id/snapshots` | スナップショット一覧 |
-| GET | `/api/snapshots/:id` | スナップショット内容取得 |
-| GET | `/api/snapshots/:id/download` | 生ファイルダウンロード |
-| GET | `/api/diff?from=:id&to=:id` | 2 スナップショット間の差分（`from` 省略で空内容との差分） |
-| GET | `/api/stats` | 統計情報 |
-| DELETE | `/api/files/:id` | ファイルと全スナップショット削除 |
+### ダッシュボード
+
+トップページには直近の変更履歴がフィード形式で表示されます。パス検索バーでファイルパスの部分一致検索が可能です。リネームイベントも履歴に表示されます。
+
+### ファイル詳細・スナップショット比較
+
+ファイルを選択するとスナップショットのタイムラインが表示されます。2つのスナップショットを選んで差分を表示できます（side-by-side / inline 切替）。各スナップショットのダウンロードも可能です。リネーム履歴がある場合はそちらも表示されます。
+
+### データベースダウンロード
+
+ヘッダーのダウンロードボタンから、データベース全体のスナップショットを SQLite ファイルとしてダウンロードできます。バックアップや別マシンへの移行に使用できます。
 
 ## 開発
 
@@ -90,14 +113,17 @@ systemctl --user enable --now file-history
 # Web UI 開発サーバー（Vite proxy で Go サーバーに転送）
 cd web && npm run dev
 
-# Go サーバー起動
+# Go サーバー起動（別ターミナル）
 go run ./cmd/file-history --config config.example.json
 
 # テスト実行
-make test
+make test          # Go テスト
+cd web && npm test # Web テスト
 ```
 
-## 技術スタック
+- 内部構造: [ARCHITECTURE.md](ARCHITECTURE.md)
+- API リファレンス: [docs/API.md](docs/API.md)
 
-- **バックエンド**: Go, fsnotify, SQLite (WAL), zstd, go-diff, UUIDv7
-- **フロントエンド**: React, TypeScript, TailwindCSS, @tanstack/react-query, diff2html, Vite, SSE (EventSource)
+## ライセンス
+
+MIT
