@@ -3,7 +3,7 @@ import { useHistory, useStripWatchDir } from '../lib/api'
 import { formatDateTime, formatBytes } from '../lib/format'
 import { navigate, replaceUrl } from '../lib/router'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 
 interface DashboardProps {
