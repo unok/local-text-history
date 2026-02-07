@@ -76,30 +76,32 @@ export default function Layout({ children }: { children: ReactNode }) {
           {error && (
             <span className="text-red-500 dark:text-red-400 text-sm">Failed to load stats</span>
           )}
-          {stats && (
-            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-              <span>{stats.totalFiles} files</span>
-              <span>{stats.totalSnapshots} snapshots</span>
-              <span>{formatBytes(stats.totalSize)}</span>
-              <a
-                href={databaseDownloadUrl()}
-                className="px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
-                title="Download database snapshot"
-              >
-                DB Download
-              </a>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                aria-pressed={theme === 'dark'}
-              >
-                {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+            {stats && (
+              <>
+                <span>{stats.totalFiles} files</span>
+                <span>{stats.totalSnapshots} snapshots</span>
+                <span>{formatBytes(stats.totalSize)}</span>
+                <a
+                  href={databaseDownloadUrl()}
+                  className="px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
+                  title="Download database snapshot"
+                >
+                  DB Download
+                </a>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-pressed={theme === 'dark'}
+            >
+              {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
         </div>
       </header>
       <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>

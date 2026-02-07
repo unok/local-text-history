@@ -9,7 +9,14 @@
       (function() {
         try {
           var t = localStorage.getItem('theme');
-          if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme;
+          if (t === 'light' || t === 'dark') {
+            theme = t;
+          } else {
+            theme = prefersDark ? 'dark' : 'light';
+          }
+          if (theme === 'dark') {
             document.documentElement.classList.add('dark');
           }
         } catch (e) {}

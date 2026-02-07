@@ -75,12 +75,19 @@ function toggleTheme(): void {
 // Listen to OS theme changes for when no explicit theme is stored
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaQuery.addEventListener('change', () => {
+
+  const handleChange = () => {
     if (getStoredTheme() === null) {
       applyTheme(getSystemTheme())
       emitChange()
     }
-  })
+  }
+
+  if (typeof mediaQuery.addEventListener === 'function') {
+    mediaQuery.addEventListener('change', handleChange)
+  } else if (typeof (mediaQuery as any).addListener === 'function') {
+    ;(mediaQuery as any).addListener(handleChange)
+  }
 }
 
 export function useTheme(): { theme: Theme; toggleTheme: () => void } {
