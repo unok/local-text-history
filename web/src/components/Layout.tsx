@@ -93,6 +93,8 @@ export default function Layout({ children }: { children: ReactNode }) {
                 onClick={toggleTheme}
                 className="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-pressed={theme === 'dark'}
               >
                 {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
               </button>

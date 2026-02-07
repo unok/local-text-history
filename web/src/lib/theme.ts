@@ -5,17 +5,24 @@ type Theme = 'light' | 'dark'
 const STORAGE_KEY = 'theme'
 
 function getStoredTheme(): Theme | null {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored === 'light' || stored === 'dark') {
-    return stored
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored === 'light' || stored === 'dark') {
+      return stored
+    }
+  } catch {
+    // Storage access may be blocked in some privacy modes
   }
   return null
 }
 
 function getSystemTheme(): Theme {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light'
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light'
+  }
+  return 'light'
 }
 
 function resolveTheme(): Theme {
@@ -23,6 +30,7 @@ function resolveTheme(): Theme {
 }
 
 function applyTheme(theme: Theme): void {
+  if (typeof document === 'undefined') return
   if (theme === 'dark') {
     document.documentElement.classList.add('dark')
   } else {
@@ -50,7 +58,11 @@ function getSnapshot(): Theme {
 }
 
 function setTheme(theme: Theme): void {
-  localStorage.setItem(STORAGE_KEY, theme)
+  try {
+    localStorage.setItem(STORAGE_KEY, theme)
+  } catch {
+    // Storage access may be blocked in some privacy modes
+  }
   applyTheme(theme)
   emitChange()
 }
@@ -61,15 +73,26 @@ function toggleTheme(): void {
 }
 
 // Listen to OS theme changes for when no explicit theme is stored
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-mediaQuery.addEventListener('change', () => {
-  if (getStoredTheme() === null) {
-    applyTheme(getSystemTheme())
-    emitChange()
-  }
-})
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  mediaQuery.addEventListener('change', () => {
+    if (getStoredTheme() === null) {
+      applyTheme(getSystemTheme())
+      emitChange()
+    }
+  })
+}
 
 export function useTheme(): { theme: Theme; toggleTheme: () => void } {
   const theme = useSyncExternalStore(subscribe, getSnapshot)
   return { theme, toggleTheme }
+}
+
+export const _testing = {
+  resolveTheme,
+  toggleTheme,
+  applyTheme,
+  getStoredTheme,
+  getSystemTheme,
+  subscribe,
 }
