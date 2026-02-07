@@ -630,7 +630,15 @@ func (d *DB) GetStats() (Stats, error) {
 
 // GetRecentSnapshots returns the most recent snapshots and renames across all files,
 // joined with their file path, ordered by timestamp descending.
-func (d *DB) GetRecentSnapshots(limit, offset int) ([]HistoryEntry, error) {
+// When query is non-empty, results are filtered to entries whose file path contains the query string.
+func (d *DB) GetRecentSnapshots(limit, offset int, query string) ([]HistoryEntry, error) {
+	if query == "" {
+		return d.getRecentSnapshotsAll(limit, offset)
+	}
+	return d.getRecentSnapshotsFiltered(limit, offset, query)
+}
+
+func (d *DB) getRecentSnapshotsAll(limit, offset int) ([]HistoryEntry, error) {
 	rows, err := d.db.Query(
 		`SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
 			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
@@ -647,7 +655,32 @@ func (d *DB) GetRecentSnapshots(limit, offset int) ([]HistoryEntry, error) {
 		return nil, fmt.Errorf("getting recent entries: %w", err)
 	}
 	defer rows.Close()
+	return scanHistoryEntries(rows)
+}
 
+func (d *DB) getRecentSnapshotsFiltered(limit, offset int, query string) ([]HistoryEntry, error) {
+	rows, err := d.db.Query(
+		`SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
+			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
+			FROM snapshots s
+			JOIN files f ON s.file_id = f.id
+			WHERE f.path LIKE '%' || ? || '%'
+			UNION ALL
+			SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
+			FROM renames r
+			WHERE r.new_path LIKE '%' || ? || '%' OR r.old_path LIKE '%' || ? || '%'
+		) ORDER BY timestamp DESC, entry_id DESC
+		LIMIT ? OFFSET ?`,
+		query, query, query, limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting recent entries: %w", err)
+	}
+	defer rows.Close()
+	return scanHistoryEntries(rows)
+}
+
+func scanHistoryEntries(rows *sql.Rows) ([]HistoryEntry, error) {
 	var entries []HistoryEntry
 	for rows.Next() {
 		var e HistoryEntry

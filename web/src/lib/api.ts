@@ -146,13 +146,19 @@ export interface HistoryResponse {
   hasMore: boolean
 }
 
-export function useHistory(limit: number, offset: number) {
+export function useHistory(limit: number, offset: number, query: string) {
   return useQuery({
-    queryKey: ['history', limit, offset],
-    queryFn: () =>
-      fetchJSON<HistoryResponse>(
-        `/api/history?limit=${limit}&offset=${offset}`,
-      ),
+    queryKey: ['history', limit, offset, query],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+      })
+      if (query) {
+        params.set('q', query)
+      }
+      return fetchJSON<HistoryResponse>(`/api/history?${params.toString()}`)
+    },
   })
 }
 

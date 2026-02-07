@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useHistory, useStripWatchDir } from '../lib/api'
 import { formatDate, formatBytes } from '../lib/format'
 import { navigate, replaceUrl } from '../lib/router'
@@ -16,7 +16,7 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const offset = page * PAGE_SIZE
-  const { data, isLoading, error } = useHistory(PAGE_SIZE, offset)
+  const { data, isLoading, error } = useHistory(PAGE_SIZE, offset, initialQuery)
   const stripWatchDir = useStripWatchDir()
 
   useEffect(() => {
@@ -40,17 +40,7 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
     return () => clearTimeout(debounceRef.current)
   }, [])
 
-  const filtered = useMemo(() => {
-    if (!data) return []
-    if (!query) return data.entries
-    const lower = query.toLowerCase()
-    return data.entries.filter((e) => {
-      if (e.filePath.toLowerCase().includes(lower)) return true
-      if (e.oldFilePath && e.oldFilePath.toLowerCase().includes(lower)) return true
-      return false
-    })
-  }, [data, query])
-
+  const entries = data?.entries ?? []
   const hasMore = data?.hasMore ?? false
 
   return (
@@ -68,10 +58,10 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
       {error && (
         <p className="text-red-500 text-sm">Error: {error.message}</p>
       )}
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && entries.length === 0 && (
         <p className="text-gray-500 text-sm">No recent changes found.</p>
       )}
-      {filtered.length > 0 && (
+      {entries.length > 0 && (
         <table className="w-full border border-gray-200 rounded-md overflow-hidden text-sm">
           <thead>
             <tr className="bg-gray-50 text-left text-gray-600">
@@ -81,7 +71,7 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {filtered.map((entry) => (
+            {entries.map((entry) => (
                 <tr
                   key={`${entry.entryType}-${entry.snapshotId}`}
                   className="cursor-pointer hover:bg-blue-100"
