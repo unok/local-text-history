@@ -27,16 +27,16 @@ function RenameHistory({
 }) {
   return (
     <div className="mt-2">
-      <p className="text-xs font-semibold text-gray-500 mb-1">
+      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
         Rename History
       </p>
-      <ul className="text-xs text-gray-600 space-y-0.5">
+      <ul className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
         {renames.map((r) => {
           return (
             <li key={r.id} className="flex items-center gap-1">
               <a
                 href={`/files/${r.oldFileId}`}
-                className="text-blue-600 hover:underline font-mono"
+                className="text-blue-600 dark:text-blue-400 hover:underline font-mono"
                 onClick={(e) => {
                   e.preventDefault()
                   navigate(`/files/${r.oldFileId}`)
@@ -44,10 +44,10 @@ function RenameHistory({
               >
                 {stripWatchDir(r.oldPath)}
               </a>
-              <span className="text-gray-400">&rarr;</span>
+              <span className="text-gray-400 dark:text-gray-500">&rarr;</span>
               <a
                 href={`/files/${r.newFileId}`}
-                className="text-blue-600 hover:underline font-mono"
+                className="text-blue-600 dark:text-blue-400 hover:underline font-mono"
                 onClick={(e) => {
                   e.preventDefault()
                   navigate(`/files/${r.newFileId}`)
@@ -97,11 +97,11 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
   }, [fromId, toId, snapshots])
 
   if (fileLoading || snapsLoading) {
-    return <p className="text-gray-500 text-sm">Loading...</p>
+    return <p className="text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
   }
   if (fileError) {
     return (
-      <p className="text-red-500 text-sm">Error: {fileError.message}</p>
+      <p className="text-red-500 dark:text-red-400 text-sm">Error: {fileError.message}</p>
     )
   }
 
@@ -133,7 +133,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
       <div>
         <a
           href="/"
-          className="text-blue-600 hover:underline text-sm"
+          className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
           onClick={(e) => {
             e.preventDefault()
             navigate('/')
@@ -141,7 +141,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
         >
           &larr; Back
         </a>
-        <h2 className="text-lg font-mono font-semibold text-gray-800 mt-1">
+        <h2 className="text-lg font-mono font-semibold text-gray-800 dark:text-gray-100 mt-1">
           {file ? stripWatchDir(file.path) : ''}
         </h2>
         {renames && renames.length > 0 && (
@@ -154,29 +154,29 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
             Snapshots
           </h3>
           {!hasDiff && (
-            <p className="text-xs text-gray-500 mb-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
               Click a snapshot to compare with its previous version.
             </p>
           )}
           {hasDiff && (
-            <p className="text-xs text-gray-500 mb-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
               Use From / To buttons to change comparison range.
             </p>
           )}
           {snapsError && (
-            <p className="text-red-500 text-sm">
+            <p className="text-red-500 dark:text-red-400 text-sm">
               Error: {snapsError.message}
             </p>
           )}
           {snapshots && snapshots.length === 0 && (
-            <p className="text-gray-500 text-sm">No snapshots.</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">No snapshots.</p>
           )}
           {snapshots && snapshots.length > 0 && (
-            <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md overflow-hidden">
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
               {snapshots.map((snap) => {
                 const isFrom = snap.id === resolvedFromId
                 const isTo = snap.id === resolvedToId
@@ -192,28 +192,28 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
                         handleRowClick(snap.id)
                       }
                     }}
-                    className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${
-                      isFrom || isTo ? 'bg-blue-100' : 'bg-white'
+                    className={`px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 ${
+                      isFrom || isTo ? 'bg-blue-100 dark:bg-blue-900' : 'bg-white dark:bg-gray-800'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm text-gray-800">
+                        <p className="text-sm text-gray-800 dark:text-gray-100">
                           {formatDate(snap.timestamp)}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {formatBytes(snap.size)} &middot;{' '}
                           {snap.hash.substring(0, 8)}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         {isFrom && (
-                          <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded">
+                          <span className="text-xs bg-orange-500 dark:bg-orange-600 text-white px-2 py-0.5 rounded">
                             From
                           </span>
                         )}
                         {isTo && (
-                          <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">
+                          <span className="text-xs bg-blue-500 dark:bg-blue-600 text-white px-2 py-0.5 rounded">
                             To
                           </span>
                         )}
@@ -221,13 +221,13 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
                           <>
                             <button
                               onClick={(e) => handleSetFrom(e, snap.id)}
-                              className="text-xs text-orange-600 hover:bg-orange-100 px-1.5 py-0.5 rounded"
+                              className="text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 px-1.5 py-0.5 rounded"
                             >
                               From
                             </button>
                             <button
                               onClick={(e) => handleSetTo(e, snap.id)}
-                              className="text-xs text-blue-600 hover:bg-blue-100 px-1.5 py-0.5 rounded"
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800 px-1.5 py-0.5 rounded"
                             >
                               To
                             </button>
@@ -236,7 +236,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
                         <a
                           href={downloadSnapshotUrl(snap.id)}
                           onClick={(e) => e.stopPropagation()}
-                          className="text-blue-500 hover:text-blue-700 text-xs"
+                          className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-xs"
                           title="Download"
                         >
                           DL
@@ -254,7 +254,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
           {hasDiff ? (
             <DiffView fromId={resolvedFromId} toId={resolvedToId} />
           ) : (
-            <p className="text-gray-500 text-sm">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
               Select a snapshot to view diff.
             </p>
           )}

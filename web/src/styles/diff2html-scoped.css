@@ -397,3 +397,29 @@
     border: 1px solid var(--d2h-moved-label-color);
   }
 }
+
+.dark .d2h-scope {
+  --d2h-bg-color: #1f2937;
+  --d2h-border-color: #374151;
+  --d2h-dim-color: rgba(255, 255, 255, 0.4);
+  --d2h-line-border-color: #374151;
+  --d2h-file-header-bg-color: #111827;
+  --d2h-file-header-border-color: #374151;
+  --d2h-empty-placeholder-bg-color: #1f2937;
+  --d2h-empty-placeholder-border-color: #374151;
+  --d2h-selected-color: #1e3a5f;
+  --d2h-ins-bg-color: #0d2818;
+  --d2h-ins-border-color: #166534;
+  --d2h-ins-highlight-bg-color: #14532d;
+  --d2h-ins-label-color: #4ade80;
+  --d2h-del-bg-color: #2d1216;
+  --d2h-del-border-color: #991b1b;
+  --d2h-del-highlight-bg-color: #7f1d1d;
+  --d2h-del-label-color: #f87171;
+  --d2h-change-del-color: #422006;
+  --d2h-change-ins-color: #052e16;
+  --d2h-info-bg-color: #111827;
+  --d2h-info-border-color: #1e3a5f;
+  --d2h-change-label-color: #fbbf24;
+  --d2h-moved-label-color: #60a5fa;
+}
