@@ -33,14 +33,16 @@ type Snapshot struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
-// HistoryEntry represents a recent snapshot with file path information.
+// HistoryEntry represents a recent snapshot or rename event with file path information.
 type HistoryEntry struct {
-	SnapshotID string `json:"snapshotId"`
-	FileID     string `json:"fileId"`
-	FilePath   string `json:"filePath"`
-	Size       int64  `json:"size"`
-	Hash       string `json:"hash"`
-	Timestamp  int64  `json:"timestamp"`
+	SnapshotID  string `json:"snapshotId"`
+	FileID      string `json:"fileId"`
+	FilePath    string `json:"filePath"`
+	Size        int64  `json:"size"`
+	Hash        string `json:"hash"`
+	Timestamp   int64  `json:"timestamp"`
+	EntryType   string `json:"entryType"`
+	OldFilePath string `json:"oldFilePath,omitempty"`
 }
 
 // Rename represents a file rename record.
@@ -626,26 +628,30 @@ func (d *DB) GetStats() (Stats, error) {
 	return stats, nil
 }
 
-// GetRecentSnapshots returns the most recent snapshots across all files,
+// GetRecentSnapshots returns the most recent snapshots and renames across all files,
 // joined with their file path, ordered by timestamp descending.
 func (d *DB) GetRecentSnapshots(limit, offset int) ([]HistoryEntry, error) {
 	rows, err := d.db.Query(
-		`SELECT s.id, s.file_id, f.path, s.size, s.hash, s.timestamp
-		 FROM snapshots s
-		 JOIN files f ON s.file_id = f.id
-		 ORDER BY s.timestamp DESC, s.id DESC
-		 LIMIT ? OFFSET ?`,
+		`SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
+			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
+			FROM snapshots s
+			JOIN files f ON s.file_id = f.id
+			UNION ALL
+			SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
+			FROM renames r
+		) ORDER BY timestamp DESC, entry_id DESC
+		LIMIT ? OFFSET ?`,
 		limit, offset,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("getting recent snapshots: %w", err)
+		return nil, fmt.Errorf("getting recent entries: %w", err)
 	}
 	defer rows.Close()
 
 	var entries []HistoryEntry
 	for rows.Next() {
 		var e HistoryEntry
-		if err := rows.Scan(&e.SnapshotID, &e.FileID, &e.FilePath, &e.Size, &e.Hash, &e.Timestamp); err != nil {
+		if err := rows.Scan(&e.SnapshotID, &e.EntryType, &e.FileID, &e.FilePath, &e.OldFilePath, &e.Size, &e.Hash, &e.Timestamp); err != nil {
 			return nil, fmt.Errorf("scanning history entry: %w", err)
 		}
 		entries = append(entries, e)

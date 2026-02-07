@@ -1067,6 +1067,103 @@ func TestSaveSnapshotBatch_DuplicateSkip(t *testing.T) {
 	}
 }
 
+func TestGetRecentSnapshots_IncludesRenames(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create a file and rename it
+	if _, err := d.SaveSnapshot("/tmp/before.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.SaveRename("/tmp/before.go", "/tmp/after.go")
+	if err != nil {
+		t.Fatalf("SaveRename() error: %v", err)
+	}
+
+	entries, err := d.GetRecentSnapshots(50, 0)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (1 save + 1 rename)", len(entries))
+	}
+
+	// Most recent first: rename, then save
+	if entries[0].EntryType != "rename" {
+		t.Errorf("entries[0].EntryType = %s, want rename", entries[0].EntryType)
+	}
+	if entries[0].FilePath != "/tmp/after.go" {
+		t.Errorf("entries[0].FilePath = %s, want /tmp/after.go", entries[0].FilePath)
+	}
+	if entries[0].OldFilePath != "/tmp/before.go" {
+		t.Errorf("entries[0].OldFilePath = %s, want /tmp/before.go", entries[0].OldFilePath)
+	}
+	if entries[0].Size != 0 {
+		t.Errorf("entries[0].Size = %d, want 0 for rename", entries[0].Size)
+	}
+	if entries[0].Hash != "" {
+		t.Errorf("entries[0].Hash = %s, want empty for rename", entries[0].Hash)
+	}
+
+	if entries[1].EntryType != "save" {
+		t.Errorf("entries[1].EntryType = %s, want save", entries[1].EntryType)
+	}
+	if entries[1].FilePath != "/tmp/before.go" {
+		t.Errorf("entries[1].FilePath = %s, want /tmp/before.go", entries[1].FilePath)
+	}
+	if entries[1].OldFilePath != "" {
+		t.Errorf("entries[1].OldFilePath = %s, want empty for save", entries[1].OldFilePath)
+	}
+}
+
+func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create 3 saves and 2 renames = 5 total entries
+	if _, err := d.SaveSnapshot("/tmp/p1.go", []byte("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/p2.go", []byte("c2")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveRename("/tmp/p1.go", "/tmp/p1renamed.go"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/p3.go", []byte("c3")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveRename("/tmp/p2.go", "/tmp/p2renamed.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	page1, err := d.GetRecentSnapshots(3, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) != 3 {
+		t.Errorf("page1: got %d entries, want 3", len(page1))
+	}
+
+	page2, err := d.GetRecentSnapshots(3, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 2 {
+		t.Errorf("page2: got %d entries, want 2", len(page2))
+	}
+
+	// No overlap
+	ids := make(map[string]bool)
+	for _, e := range page1 {
+		ids[e.EntryType+"-"+e.SnapshotID] = true
+	}
+	for _, e := range page2 {
+		key := e.EntryType + "-" + e.SnapshotID
+		if ids[key] {
+			t.Errorf("page overlap: %s found in both pages", key)
+		}
+	}
+}
+
 func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
 	d := newTestDB(t, 0)
 

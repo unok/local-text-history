@@ -593,6 +593,50 @@ func TestHandleHistory_Pagination(t *testing.T) {
 	}
 }
 
+func TestHandleHistory_IncludesRenames(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	if _, err := database.SaveSnapshot("/tmp/hren1.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveRename("/tmp/hren1.go", "/tmp/hren2.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/history", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (1 save + 1 rename)", len(result.Entries))
+	}
+
+	// Most recent first: rename, then save
+	if result.Entries[0].EntryType != "rename" {
+		t.Errorf("entries[0].EntryType = %s, want rename", result.Entries[0].EntryType)
+	}
+	if result.Entries[0].FilePath != "/tmp/hren2.go" {
+		t.Errorf("entries[0].FilePath = %s, want /tmp/hren2.go", result.Entries[0].FilePath)
+	}
+	if result.Entries[0].OldFilePath != "/tmp/hren1.go" {
+		t.Errorf("entries[0].OldFilePath = %s, want /tmp/hren1.go", result.Entries[0].OldFilePath)
+	}
+	if result.Entries[1].EntryType != "save" {
+		t.Errorf("entries[1].EntryType = %s, want save", result.Entries[1].EntryType)
+	}
+}
+
 func TestGetRenames_Empty(t *testing.T) {
 	srv, database := newTestServer(t)
 

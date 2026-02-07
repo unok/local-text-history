@@ -43,6 +43,8 @@ export interface HistoryEntry {
   size: number
   hash: string
   timestamp: number
+  entryType: 'save' | 'rename'
+  oldFilePath?: string
 }
 
 export interface RenameRecord {

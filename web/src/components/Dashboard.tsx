@@ -44,7 +44,11 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
     if (!data) return []
     if (!query) return data.entries
     const lower = query.toLowerCase()
-    return data.entries.filter((e) => e.filePath.toLowerCase().includes(lower))
+    return data.entries.filter((e) => {
+      if (e.filePath.toLowerCase().includes(lower)) return true
+      if (e.oldFilePath && e.oldFilePath.toLowerCase().includes(lower)) return true
+      return false
+    })
   }, [data, query])
 
   const hasMore = data?.hasMore ?? false
@@ -73,38 +77,60 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
             <tr className="bg-gray-50 text-left text-gray-600">
               <th className="px-3 py-2 font-medium">Date</th>
               <th className="px-3 py-2 font-medium">File</th>
-              <th className="px-3 py-2 font-medium text-right">Size</th>
+              <th className="px-3 py-2 font-medium text-right">Size(Byte)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filtered.map((entry) => (
                 <tr
-                  key={entry.snapshotId}
+                  key={`${entry.entryType}-${entry.snapshotId}`}
                   className="cursor-pointer hover:bg-blue-100"
                   onClick={() =>
-                    navigate(
-                      `/files/${entry.fileId}/diff/${entry.snapshotId}`,
-                    )
+                    entry.entryType === 'rename'
+                      ? navigate(`/files/${entry.fileId}`)
+                      : navigate(`/files/${entry.fileId}/diff/${entry.snapshotId}`)
                   }
                 >
                   <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                     {formatDate(entry.timestamp)}
                   </td>
                   <td className="px-3 py-2 font-mono truncate">
-                    <a
-                      href={`/files/${entry.fileId}`}
-                      className="text-blue-600 hover:underline"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        navigate(`/files/${entry.fileId}`)
-                      }}
-                    >
-                      {stripWatchDir(entry.filePath)}
-                    </a>
+                    {entry.entryType === 'rename' ? (
+                      <span>
+                        <span className="text-gray-400">{stripWatchDir(entry.oldFilePath ?? '')}</span>
+                        <span className="text-gray-400 mx-1">&rarr;</span>
+                        <a
+                          href={`/files/${entry.fileId}`}
+                          className="text-blue-600 hover:underline"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            navigate(`/files/${entry.fileId}`)
+                          }}
+                        >
+                          {stripWatchDir(entry.filePath)}
+                        </a>
+                      </span>
+                    ) : (
+                      <a
+                        href={`/files/${entry.fileId}`}
+                        className="text-blue-600 hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          navigate(`/files/${entry.fileId}`)
+                        }}
+                      >
+                        {stripWatchDir(entry.filePath)}
+                      </a>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-gray-500 text-right whitespace-nowrap">
-                    {formatBytes(entry.size)}
+                    {entry.entryType === 'rename' ? (
+                      <span className="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">rename</span>
+                    ) : (
+                      formatBytes(entry.size)
+                    )}
                   </td>
                 </tr>
             ))}
