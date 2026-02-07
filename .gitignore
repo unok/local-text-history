@@ -1,5 +1,5 @@
 # Binaries
-file-history
+/file-history
 bin/
 
 # Config (contains personal paths)
@@ -22,3 +22,6 @@ web/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store
+
+# direnv
+.envrc
