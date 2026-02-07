@@ -1,7 +1,6 @@
 package watcher
 
 import (
-	"bytes"
 	"fmt"
 	"io/fs"
 	"log"
@@ -11,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -412,18 +410,7 @@ func (w *Watcher) tryMatchRename(newPath string) bool {
 // matchesPendingRename checks if the old path was a tracked file,
 // meaning a Rename event on it should be paired with the subsequent Create event.
 func (w *Watcher) matchesPendingRename(oldPath string) bool {
-	return w.shouldTrackPath(oldPath)
-}
-
-// shouldTrackPath checks if a path should be tracked (without checking if file exists).
-func (w *Watcher) shouldTrackPath(filePath string) bool {
-	if len(w.extSet) > 0 {
-		ext := filepath.Ext(filePath)
-		if _, ok := w.extSet[ext]; !ok {
-			return false
-		}
-	}
-	return !w.isExcluded(filePath)
+	return w.shouldTrack(oldPath)
 }
 
 // processRename queues a rename record for saving.
@@ -489,76 +476,6 @@ func (w *Watcher) takeSnapshot(filePath string) {
 	w.saveCh <- saveJob{filePath: filePath, content: content}
 }
 
-// tryStartScan attempts to register root for scanning. Returns true if scanning
-// can proceed, false if already scanning or watcher is closed.
-func (w *Watcher) tryStartScan(root string) bool {
-	w.scanMu.Lock()
-	defer w.scanMu.Unlock()
-	if w.scanningDirs == nil {
-		return false
-	}
-	if _, scanning := w.scanningDirs[root]; scanning {
-		return false
-	}
-	w.scanningDirs[root] = struct{}{}
-	return true
-}
-
-// finishScan removes root from the scanning set.
-func (w *Watcher) finishScan(root string) {
-	w.scanMu.Lock()
-	defer w.scanMu.Unlock()
-	if w.scanningDirs != nil {
-		delete(w.scanningDirs, root)
-	}
-}
-
-// scanExistingFiles walks a directory tree and takes snapshots of all trackable files.
-// It is designed to be called asynchronously after a new directory is detected,
-// to pick up files that may have been missed by fsnotify event-driven model.
-func (w *Watcher) scanExistingFiles(root string) {
-	if !w.tryStartScan(root) {
-		return
-	}
-	defer w.finishScan(root)
-
-	var scannedCount int
-	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			log.Printf("scan: skipping %s: %v", path, err)
-			if d != nil && d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-
-		select {
-		case <-w.closeCh:
-			return fs.SkipAll
-		default:
-		}
-
-		if d.IsDir() {
-			if w.isExcluded(path) {
-				return fs.SkipDir
-			}
-			return nil
-		}
-
-		if w.shouldTrack(path) {
-			w.takeSnapshot(path)
-			scannedCount++
-		}
-		return nil
-	}); err != nil {
-		log.Printf("scan walk error for %s: %v", root, err)
-	}
-
-	if scannedCount > 0 {
-		log.Printf("scan completed: %s (%d files scanned)", root, scannedCount)
-	}
-}
-
 func (w *Watcher) addDirRecursive(root string) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -574,58 +491,3 @@ func (w *Watcher) addDirRecursive(root string) error {
 	})
 }
 
-// shouldTrack returns true if the file should be tracked based on
-// extension and exclude pattern filters.
-func (w *Watcher) shouldTrack(filePath string) bool {
-	// When extensions are configured, check the file extension
-	if len(w.extSet) > 0 {
-		ext := filepath.Ext(filePath)
-		if _, ok := w.extSet[ext]; !ok {
-			return false
-		}
-	}
-	return !w.isExcluded(filePath)
-}
-
-// isExcluded returns true if the path matches any exclude pattern.
-func (w *Watcher) isExcluded(filePath string) bool {
-	for _, pattern := range w.config.ExcludePatterns {
-		matched, err := doublestar.PathMatch(pattern, filePath)
-		if err != nil {
-			continue
-		}
-		if matched {
-			return true
-		}
-		// Also try matching against just the relative-like path components
-		// by checking if any suffix of the path matches.
-		parts := strings.Split(filePath, string(filepath.Separator))
-		for i := range parts {
-			sub := strings.Join(parts[i:], string(filepath.Separator))
-			matched, err = doublestar.PathMatch(pattern, sub)
-			if err != nil {
-				continue
-			}
-			if matched {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// binaryCheckSize is the number of bytes to inspect for NUL bytes.
-const binaryCheckSize = 8192
-
-// isBinary returns true if the data contains a NUL byte (0x00) in
-// the first 8KB, indicating a binary file (same heuristic as Git).
-func isBinary(data []byte) bool {
-	if len(data) == 0 {
-		return false
-	}
-	checkLen := len(data)
-	if checkLen > binaryCheckSize {
-		checkLen = binaryCheckSize
-	}
-	return bytes.ContainsRune(data[:checkLen], 0)
-}
