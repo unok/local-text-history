@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unok/local-text-history/internal/config"
 	"github.com/unok/local-text-history/internal/db"
 )
 
@@ -24,7 +25,7 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	srv := New(database, nil, nil)
+	srv := New(database, nil, nil, nil)
 	return srv, database
 }
 
@@ -344,7 +345,7 @@ func TestStats_IncludesWatchDirs(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	watchDirs := []string{"/home/user/projects", "/home/user/docs"}
-	srv := New(database, nil, watchDirs)
+	srv := New(database, nil, watchDirs, nil)
 
 	req := httptest.NewRequest("GET", "/api/stats", nil)
 	w := httptest.NewRecorder()
@@ -838,5 +839,89 @@ func TestHandleSSE_ReceivesNotification(t *testing.T) {
 	}
 	if ctx.Err() != nil {
 		t.Fatal("timed out waiting for SSE event")
+	}
+}
+
+func TestBasicAuth_RejectsWithoutCredentials(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath, 0)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	auth := &config.BasicAuthConfig{Username: "admin", Password: "secret"}
+	srv := New(database, nil, nil, auth)
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+	if hdr := w.Header().Get("WWW-Authenticate"); hdr == "" {
+		t.Error("missing WWW-Authenticate header")
+	}
+}
+
+func TestBasicAuth_RejectsWrongCredentials(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath, 0)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	auth := &config.BasicAuthConfig{Username: "admin", Password: "secret"}
+	srv := New(database, nil, nil, auth)
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req.SetBasicAuth("admin", "wrong")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestBasicAuth_AcceptsValidCredentials(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath, 0)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	auth := &config.BasicAuthConfig{Username: "admin", Password: "secret"}
+	srv := New(database, nil, nil, auth)
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req.SetBasicAuth("admin", "secret")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestBasicAuth_NilConfigSkipsAuth(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath, 0)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	srv := New(database, nil, nil, nil)
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }

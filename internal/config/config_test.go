@@ -192,6 +192,109 @@ func TestLoad_TildeExpansion(t *testing.T) {
 	}
 }
 
+func TestLoad_BasicAuthValid(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"watchDirs": ["` + watchDir + `"],
+		"dbPath": "` + filepath.Join(dir, "history.db") + `",
+		"basicAuth": {"username": "admin", "password": "secret"}
+	}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.BasicAuth == nil {
+		t.Fatal("BasicAuth should not be nil")
+	}
+	if cfg.BasicAuth.Username != "admin" {
+		t.Errorf("BasicAuth.Username = %s, want admin", cfg.BasicAuth.Username)
+	}
+	if cfg.BasicAuth.Password != "secret" {
+		t.Errorf("BasicAuth.Password = %s, want secret", cfg.BasicAuth.Password)
+	}
+}
+
+func TestLoad_BasicAuthMissingUsername(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"watchDirs": ["` + watchDir + `"],
+		"dbPath": "` + filepath.Join(dir, "history.db") + `",
+		"basicAuth": {"username": "", "password": "secret"}
+	}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("Load() should error when basicAuth.username is empty")
+	}
+}
+
+func TestLoad_BasicAuthMissingPassword(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"watchDirs": ["` + watchDir + `"],
+		"dbPath": "` + filepath.Join(dir, "history.db") + `",
+		"basicAuth": {"username": "admin", "password": ""}
+	}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("Load() should error when basicAuth.password is empty")
+	}
+}
+
+func TestLoad_BasicAuthOmitted(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"watchDirs": ["` + watchDir + `"],
+		"dbPath": "` + filepath.Join(dir, "history.db") + `"
+	}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.BasicAuth != nil {
+		t.Errorf("BasicAuth should be nil when not configured, got %+v", cfg.BasicAuth)
+	}
+}
+
 func TestLoad_WatchDirIsFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "notadir")

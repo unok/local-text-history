@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/unok/local-text-history/internal/config"
 	"github.com/unok/local-text-history/internal/db"
 	"github.com/unok/local-text-history/internal/diff"
 )
@@ -25,17 +27,19 @@ type Server struct {
 	db         *db.DB
 	staticFS   fs.FS
 	watchDirs  []string
+	basicAuth  *config.BasicAuthConfig
 	mux        *http.ServeMux
 	sseClients map[chan string]struct{}
 	sseMu      sync.Mutex
 }
 
-// New creates a new Server with the given database, static file system, and watch directories.
-func New(database *db.DB, staticFS fs.FS, watchDirs []string) *Server {
+// New creates a new Server with the given database, static file system, watch directories, and optional basic auth config.
+func New(database *db.DB, staticFS fs.FS, watchDirs []string, basicAuth *config.BasicAuthConfig) *Server {
 	s := &Server{
 		db:         database,
 		staticFS:   staticFS,
 		watchDirs:  watchDirs,
+		basicAuth:  basicAuth,
 		mux:        http.NewServeMux(),
 		sseClients: make(map[chan string]struct{}),
 	}
@@ -77,7 +81,24 @@ func (s *Server) Notify(filePath string) {
 
 // Handler returns the HTTP handler for this server.
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	if s.basicAuth == nil {
+		return s.mux
+	}
+	return s.basicAuthMiddleware(s.mux)
+}
+
+func (s *Server) basicAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(username), []byte(s.basicAuth.Username)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(password), []byte(s.basicAuth.Password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="local-text-history"`)
+			writeError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) registerRoutes() {

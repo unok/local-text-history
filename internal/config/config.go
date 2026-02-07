@@ -9,17 +9,24 @@ import (
 	"strings"
 )
 
+// BasicAuthConfig holds Basic authentication credentials.
+type BasicAuthConfig struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 // Config holds all application configuration.
 type Config struct {
-	WatchDirs       []string `json:"watchDirs"`
-	DebounceSec     int      `json:"debounceSec"`
-	BindAddress     string   `json:"bindAddress"`
-	Port            int      `json:"port"`
-	DBPath          string   `json:"dbPath"`
-	Extensions      []string `json:"extensions"`
-	ExcludePatterns []string `json:"excludePatterns"`
-	MaxFileSize     int64    `json:"maxFileSize"`
-	MaxSnapshots    int      `json:"maxSnapshots"`
+	WatchDirs       []string         `json:"watchDirs"`
+	DebounceSec     int              `json:"debounceSec"`
+	BindAddress     string           `json:"bindAddress"`
+	Port            int              `json:"port"`
+	DBPath          string           `json:"dbPath"`
+	Extensions      []string         `json:"extensions"`
+	ExcludePatterns []string         `json:"excludePatterns"`
+	MaxFileSize     int64            `json:"maxFileSize"`
+	MaxSnapshots    int              `json:"maxSnapshots"`
+	BasicAuth       *BasicAuthConfig `json:"basicAuth,omitempty"`
 }
 
 // Load reads a JSON config file and returns a validated Config.
@@ -94,6 +101,14 @@ func validate(cfg Config) error {
 	}
 	if cfg.MaxSnapshots < 0 {
 		return errors.New("maxSnapshots must be >= 0")
+	}
+	if cfg.BasicAuth != nil {
+		if cfg.BasicAuth.Username == "" {
+			return errors.New("basicAuth.username must not be empty when basicAuth is configured")
+		}
+		if cfg.BasicAuth.Password == "" {
+			return errors.New("basicAuth.password must not be empty when basicAuth is configured")
+		}
 	}
 	return nil
 }

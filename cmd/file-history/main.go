@@ -74,7 +74,7 @@ func main() {
 	w.SetBatchSaver(database.SaveSnapshotBatch)
 
 	// Set up HTTP server
-	srv := server.New(database, staticFS, cfg.WatchDirs)
+	srv := server.New(database, staticFS, cfg.WatchDirs, cfg.BasicAuth)
 
 	// Wire watcher snapshot notifications to SSE
 	w.OnSnapshot = func(filePath string) {
