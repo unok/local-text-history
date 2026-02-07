@@ -3,7 +3,7 @@ export function formatBytes(bytes: number): string {
   return bytes.toLocaleString('en-US')
 }
 
-export function formatDate(unix: number): string {
+export function formatDateTime(unix: number): string {
   const d = new Date(unix * 1000)
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')

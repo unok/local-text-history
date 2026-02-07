@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes, formatDate } from './format'
+import { formatBytes, formatDateTime } from './format'
 
 describe('formatBytes', () => {
   it('returns "0" for zero', () => {
@@ -35,43 +35,26 @@ describe('formatBytes', () => {
   })
 })
 
-describe('formatDate', () => {
+// Tests run with TZ=UTC (configured in vite.config.ts)
+describe('formatDateTime', () => {
   it('formats unix timestamp as YYYY/MM/DD HH:MM:SS', () => {
     // 2024-01-01T00:00:00Z = 1704067200
-    const unix = 1704067200
-    const d = new Date(unix * 1000)
-    const expected =
-      `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ` +
-      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-    expect(formatDate(unix)).toBe(expected)
+    expect(formatDateTime(1704067200)).toBe('2024/01/01 00:00:00')
   })
 
   it('zero-pads single-digit month, day, hours, minutes, seconds', () => {
-    // 2024-03-05T07:08:09Z = pick a timestamp where local time has single digits
-    // Use a known date and compute expected from local timezone
-    const unix = 1709618889 // 2024-03-05T07:08:09Z
-    const d = new Date(unix * 1000)
-    const result = formatDate(unix)
-    expect(result).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
-    // Verify each component matches
-    expect(result).toBe(
-      `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ` +
-      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-    )
+    // 2024-03-05T06:08:09Z = 1709618889
+    expect(formatDateTime(1709618889)).toBe('2024/03/05 06:08:09')
   })
 
   it('handles zero timestamp (epoch)', () => {
-    const d = new Date(0)
-    const expected =
-      `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ` +
-      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-    expect(formatDate(0)).toBe(expected)
+    expect(formatDateTime(0)).toBe('1970/01/01 00:00:00')
   })
 
   it('always matches YYYY/MM/DD HH:MM:SS format', () => {
     const timestamps = [0, 1704067200, 1709618889, 1700000000]
     for (const ts of timestamps) {
-      expect(formatDate(ts)).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
+      expect(formatDateTime(ts)).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
     }
   })
 })
