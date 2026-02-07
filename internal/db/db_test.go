@@ -591,6 +591,150 @@ func TestMigrateIfNeeded_OldSchema(t *testing.T) {
 	}
 }
 
+func TestSaveRename_Basic(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create a file with a snapshot
+	if _, err := d.SaveSnapshot("/tmp/old.go", []byte("package main")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save a rename
+	newFileID, err := d.SaveRename("/tmp/old.go", "/tmp/new.go")
+	if err != nil {
+		t.Fatalf("SaveRename() error: %v", err)
+	}
+	if newFileID == "" {
+		t.Fatal("SaveRename() returned empty newFileID")
+	}
+
+	// Verify new file was created
+	newFile, err := d.GetFile(newFileID)
+	if err != nil {
+		t.Fatalf("GetFile(newFileID) error: %v", err)
+	}
+	if newFile.Path != "/tmp/new.go" {
+		t.Errorf("new file path = %s, want /tmp/new.go", newFile.Path)
+	}
+
+	// Verify rename record
+	oldFiles, err := d.SearchFiles("old.go", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renames, err := d.GetRenames(oldFiles[0].ID)
+	if err != nil {
+		t.Fatalf("GetRenames() error: %v", err)
+	}
+	if len(renames) != 1 {
+		t.Fatalf("got %d renames, want 1", len(renames))
+	}
+	if renames[0].OldPath != "/tmp/old.go" {
+		t.Errorf("OldPath = %s, want /tmp/old.go", renames[0].OldPath)
+	}
+	if renames[0].NewPath != "/tmp/new.go" {
+		t.Errorf("NewPath = %s, want /tmp/new.go", renames[0].NewPath)
+	}
+}
+
+func TestSaveRename_ChainedRenames(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create initial file
+	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("package main")); err != nil {
+		t.Fatal(err)
+	}
+
+	// A -> B
+	bFileID, err := d.SaveRename("/tmp/a.go", "/tmp/b.go")
+	if err != nil {
+		t.Fatalf("SaveRename(a->b) error: %v", err)
+	}
+
+	// Save snapshot for B so it exists
+	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("package main")); err != nil {
+		t.Fatal(err)
+	}
+
+	// B -> C
+	_, err = d.SaveRename("/tmp/b.go", "/tmp/c.go")
+	if err != nil {
+		t.Fatalf("SaveRename(b->c) error: %v", err)
+	}
+
+	// Check renames from B's perspective (should see both A->B and B->C)
+	renames, err := d.GetRenames(bFileID)
+	if err != nil {
+		t.Fatalf("GetRenames(b) error: %v", err)
+	}
+	if len(renames) != 2 {
+		t.Fatalf("got %d renames for B, want 2", len(renames))
+	}
+	// Ordered by timestamp ASC
+	if renames[0].OldPath != "/tmp/a.go" || renames[0].NewPath != "/tmp/b.go" {
+		t.Errorf("renames[0] = %s->%s, want a.go->b.go", renames[0].OldPath, renames[0].NewPath)
+	}
+	if renames[1].OldPath != "/tmp/b.go" || renames[1].NewPath != "/tmp/c.go" {
+		t.Errorf("renames[1] = %s->%s, want b.go->c.go", renames[1].OldPath, renames[1].NewPath)
+	}
+}
+
+func TestSaveRename_OldFileNotFound(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	_, err := d.SaveRename("/tmp/nonexistent.go", "/tmp/new.go")
+	if err == nil {
+		t.Fatal("SaveRename() should error when old file doesn't exist")
+	}
+}
+
+func TestGetRenames_Empty(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	if _, err := d.SaveSnapshot("/tmp/norenames.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	files, err := d.SearchFiles("norenames.go", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	renames, err := d.GetRenames(files[0].ID)
+	if err != nil {
+		t.Fatalf("GetRenames() error: %v", err)
+	}
+	if len(renames) != 0 {
+		t.Errorf("got %d renames, want 0", len(renames))
+	}
+}
+
+func TestSaveRename_ExistingNewFile(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// Create both files
+	if _, err := d.SaveSnapshot("/tmp/old2.go", []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/tmp/existing.go", []byte("existing")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename to existing file path
+	newFileID, err := d.SaveRename("/tmp/old2.go", "/tmp/existing.go")
+	if err != nil {
+		t.Fatalf("SaveRename() error: %v", err)
+	}
+
+	// Should reuse the existing file ID
+	existingFiles, err := d.SearchFiles("existing.go", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newFileID != existingFiles[0].ID {
+		t.Errorf("newFileID = %s, want %s (existing file ID)", newFileID, existingFiles[0].ID)
+	}
+}
+
 func TestMigrateIfNeeded_AlreadyNewSchema(t *testing.T) {
 	// New DB already has TEXT schema; migration should be a no-op
 	d := newTestDB(t, 0)

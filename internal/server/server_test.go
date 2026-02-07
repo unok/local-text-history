@@ -526,6 +526,80 @@ func TestHandleHistory_CustomLimit(t *testing.T) {
 	}
 }
 
+func TestGetRenames_Empty(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	if _, err := database.SaveSnapshot("/tmp/norename.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := database.SearchFiles("norename.go", 1, 0)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s/renames", files[0].ID), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var renames []db.Rename
+	if err := json.NewDecoder(w.Body).Decode(&renames); err != nil {
+		t.Fatal(err)
+	}
+	if len(renames) != 0 {
+		t.Errorf("got %d renames, want 0", len(renames))
+	}
+}
+
+func TestGetRenames_WithData(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	if _, err := database.SaveSnapshot("/tmp/renold.go", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := database.SaveRename("/tmp/renold.go", "/tmp/rennew.go")
+	if err != nil {
+		t.Fatalf("SaveRename() error: %v", err)
+	}
+
+	files, _ := database.SearchFiles("renold.go", 1, 0)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s/renames", files[0].ID), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var renames []db.Rename
+	if err := json.NewDecoder(w.Body).Decode(&renames); err != nil {
+		t.Fatal(err)
+	}
+	if len(renames) != 1 {
+		t.Fatalf("got %d renames, want 1", len(renames))
+	}
+	if renames[0].OldPath != "/tmp/renold.go" {
+		t.Errorf("OldPath = %s, want /tmp/renold.go", renames[0].OldPath)
+	}
+	if renames[0].NewPath != "/tmp/rennew.go" {
+		t.Errorf("NewPath = %s, want /tmp/rennew.go", renames[0].NewPath)
+	}
+}
+
+func TestGetRenames_InvalidID(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/files/abc/renames", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestDatabaseDownload(t *testing.T) {
 	srv, database := newTestServer(t)
 

@@ -2,9 +2,11 @@ import { useMemo } from 'react'
 import {
   useFile,
   useSnapshots,
+  useRenames,
   useStripWatchDir,
   downloadSnapshotUrl,
   type Snapshot,
+  type RenameRecord,
 } from '../lib/api'
 import { formatDate, formatBytes } from '../lib/format'
 import { navigate } from '../lib/router'
@@ -14,6 +16,51 @@ interface FilePageProps {
   fileId: string
   fromId: string | null // explicit from (null = auto-resolve)
   toId: string | null // selected to (null = none selected)
+}
+
+function RenameHistory({
+  renames,
+  stripWatchDir,
+}: {
+  renames: RenameRecord[]
+  stripWatchDir: (path: string) => string
+}) {
+  return (
+    <div className="mt-2">
+      <p className="text-xs font-semibold text-gray-500 mb-1">
+        Rename History
+      </p>
+      <ul className="text-xs text-gray-600 space-y-0.5">
+        {renames.map((r) => {
+          return (
+            <li key={r.id} className="flex items-center gap-1">
+              <a
+                href={`/files/${r.oldFileId}`}
+                className="text-blue-600 hover:underline font-mono"
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigate(`/files/${r.oldFileId}`)
+                }}
+              >
+                {stripWatchDir(r.oldPath)}
+              </a>
+              <span className="text-gray-400">&rarr;</span>
+              <a
+                href={`/files/${r.newFileId}`}
+                className="text-blue-600 hover:underline font-mono"
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigate(`/files/${r.newFileId}`)
+                }}
+              >
+                {stripWatchDir(r.newPath)}
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
 }
 
 function resolvePreviousSnapshot(
@@ -37,6 +84,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
     isLoading: snapsLoading,
     error: snapsError,
   } = useSnapshots(fileId)
+  const { data: renames } = useRenames(fileId)
   const stripWatchDir = useStripWatchDir()
 
   // Resolve actual from/to for the DiffView
@@ -96,6 +144,12 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
         <h2 className="text-lg font-mono font-semibold text-gray-800 mt-1">
           {file ? stripWatchDir(file.path) : ''}
         </h2>
+        {renames && renames.length > 0 && (
+          <RenameHistory
+            renames={renames}
+            stripWatchDir={stripWatchDir}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

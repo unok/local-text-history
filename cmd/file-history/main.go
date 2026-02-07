@@ -69,12 +69,20 @@ func main() {
 		log.Fatalf("failed to create watcher: %v", err)
 	}
 
+	// Wire rename detection
+	w.SetRenameSaver(database.SaveRename)
+
 	// Set up HTTP server
 	srv := server.New(database, staticFS, cfg.WatchDirs)
 
 	// Wire watcher snapshot notifications to SSE
 	w.OnSnapshot = func(filePath string) {
 		srv.Notify(filePath)
+	}
+
+	// Wire rename notifications to SSE
+	w.OnRename = func(oldPath, newPath string) {
+		srv.Notify(newPath)
 	}
 
 	httpServer := &http.Server{

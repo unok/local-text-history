@@ -43,6 +43,16 @@ type HistoryEntry struct {
 	Timestamp  int64  `json:"timestamp"`
 }
 
+// Rename represents a file rename record.
+type Rename struct {
+	ID        string `json:"id"`
+	OldFileID string `json:"oldFileId"`
+	NewFileID string `json:"newFileId"`
+	OldPath   string `json:"oldPath"`
+	NewPath   string `json:"newPath"`
+	Timestamp int64  `json:"timestamp"`
+}
+
 // Stats holds aggregate statistics.
 type Stats struct {
 	TotalFiles     int   `json:"totalFiles"`
@@ -132,6 +142,18 @@ func createSchema(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_snapshots_file_ts ON snapshots(file_id, timestamp DESC);
 	CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON snapshots(timestamp DESC, id DESC);
 	CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+
+	CREATE TABLE IF NOT EXISTS renames (
+		id          TEXT PRIMARY KEY,
+		old_file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+		new_file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+		old_path    TEXT NOT NULL,
+		new_path    TEXT NOT NULL,
+		timestamp   INTEGER NOT NULL DEFAULT (unixepoch())
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_renames_old_file ON renames(old_file_id, timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_renames_new_file ON renames(new_file_id, timestamp DESC);
 	`
 	_, err := db.Exec(schema)
 	return err
@@ -635,6 +657,84 @@ func (d *DB) CreateDatabaseSnapshot(tmpDir string) (string, error) {
 	}
 
 	return tmpPath, nil
+}
+
+// SaveRename records a file rename event. It looks up the old file by path
+// and creates a new file record for the new path if one doesn't exist.
+// Returns the new file's ID.
+func (d *DB) SaveRename(oldPath, newPath string) (string, error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Look up old file
+	var oldFileID string
+	err = tx.QueryRow(`SELECT id FROM files WHERE path = ?`, oldPath).Scan(&oldFileID)
+	if err != nil {
+		return "", fmt.Errorf("looking up old file %q: %w", oldPath, err)
+	}
+
+	now := time.Now().Unix()
+
+	// Look up or create new file
+	var newFileID string
+	err = tx.QueryRow(`SELECT id FROM files WHERE path = ?`, newPath).Scan(&newFileID)
+	if err == sql.ErrNoRows {
+		newFileID = newUUIDv7()
+		_, err = tx.Exec(
+			`INSERT INTO files (id, path, created, updated) VALUES (?, ?, ?, ?)`,
+			newFileID, newPath, now, now,
+		)
+		if err != nil {
+			return "", fmt.Errorf("inserting new file: %w", err)
+		}
+	} else if err != nil {
+		return "", fmt.Errorf("looking up new file %q: %w", newPath, err)
+	}
+
+	// Record the rename
+	renameID := newUUIDv7()
+	_, err = tx.Exec(
+		`INSERT INTO renames (id, old_file_id, new_file_id, old_path, new_path, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		renameID, oldFileID, newFileID, oldPath, newPath, now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("inserting rename: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("committing transaction: %w", err)
+	}
+	return newFileID, nil
+}
+
+// GetRenames returns all rename records associated with the given file ID,
+// either as source (old_file_id) or destination (new_file_id), ordered by timestamp.
+func (d *DB) GetRenames(fileID string) ([]Rename, error) {
+	rows, err := d.db.Query(
+		`SELECT id, old_file_id, new_file_id, old_path, new_path, timestamp
+		 FROM renames
+		 WHERE old_file_id = ? OR new_file_id = ?
+		 ORDER BY timestamp ASC, id ASC`,
+		fileID, fileID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting renames: %w", err)
+	}
+	defer rows.Close()
+
+	var renames []Rename
+	for rows.Next() {
+		var r Rename
+		if err := rows.Scan(&r.ID, &r.OldFileID, &r.NewFileID, &r.OldPath, &r.NewPath, &r.Timestamp); err != nil {
+			return nil, fmt.Errorf("scanning rename: %w", err)
+		}
+		renames = append(renames, r)
+	}
+	return renames, rows.Err()
 }
 
 func sha256sum(data []byte) string {

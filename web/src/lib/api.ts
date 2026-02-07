@@ -45,6 +45,15 @@ export interface HistoryEntry {
   timestamp: number
 }
 
+export interface RenameRecord {
+  id: string
+  oldFileId: string
+  newFileId: string
+  oldPath: string
+  newPath: string
+  timestamp: number
+}
+
 // API client
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -120,6 +129,13 @@ export function useFile(id: string) {
   return useQuery({
     queryKey: ['file', id],
     queryFn: () => fetchJSON<FileRecord>(`/api/files/${id}`),
+  })
+}
+
+export function useRenames(fileId: string) {
+  return useQuery({
+    queryKey: ['renames', fileId],
+    queryFn: () => fetchJSON<RenameRecord[]>(`/api/files/${fileId}/renames`),
   })
 }
 

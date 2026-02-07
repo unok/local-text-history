@@ -18,6 +18,9 @@ import (
 // SnapshotSaver is called when a file change should be persisted.
 type SnapshotSaver func(filePath string, content []byte) (bool, error)
 
+// RenameSaver is called when a file rename is detected.
+type RenameSaver func(oldPath, newPath string) (string, error)
+
 // Config holds watcher configuration.
 type Config struct {
 	WatchDirs       []string
@@ -27,15 +30,24 @@ type Config struct {
 	MaxFileSize     int64
 }
 
+// pendingRename tracks a Rename event waiting for a matching Create.
+type pendingRename struct {
+	oldPath   string
+	timestamp time.Time
+}
+
 // Watcher monitors directories for file changes and triggers snapshots.
 type Watcher struct {
-	fsWatcher  *fsnotify.Watcher
-	config     Config
-	save       SnapshotSaver
-	timers     map[string]*time.Timer
-	mu         sync.Mutex
-	extSet     map[string]struct{}
-	OnSnapshot func(filePath string)
+	fsWatcher      *fsnotify.Watcher
+	config         Config
+	save           SnapshotSaver
+	saveRename     RenameSaver
+	timers         map[string]*time.Timer
+	mu             sync.Mutex
+	extSet         map[string]struct{}
+	OnSnapshot     func(filePath string)
+	OnRename       func(oldPath, newPath string)
+	pendingRenames map[string]pendingRename
 }
 
 // New creates a Watcher with the given configuration and save function.
@@ -51,11 +63,12 @@ func New(cfg Config, save SnapshotSaver) (*Watcher, error) {
 	}
 
 	w := &Watcher{
-		fsWatcher: fsw,
-		config:    cfg,
-		save:      save,
-		timers:    make(map[string]*time.Timer),
-		extSet:    extSet,
+		fsWatcher:      fsw,
+		config:         cfg,
+		save:           save,
+		timers:         make(map[string]*time.Timer),
+		extSet:         extSet,
+		pendingRenames: make(map[string]pendingRename),
 	}
 
 	for _, dir := range cfg.WatchDirs {
@@ -66,6 +79,11 @@ func New(cfg Config, save SnapshotSaver) (*Watcher, error) {
 	}
 
 	return w, nil
+}
+
+// SetRenameSaver sets the function to call when a rename is detected.
+func (w *Watcher) SetRenameSaver(saver RenameSaver) {
+	w.saveRename = saver
 }
 
 // Run starts the event loop. It blocks until the done channel is closed.
@@ -95,11 +113,37 @@ func (w *Watcher) Close() error {
 		timer.Stop()
 	}
 	w.timers = nil
+	w.pendingRenames = nil
 	w.mu.Unlock()
 	return w.fsWatcher.Close()
 }
 
+// renameTimeout is how long to wait for a Create event after a Rename event.
+const renameTimeout = 500 * time.Millisecond
+
 func (w *Watcher) handleEvent(event fsnotify.Event) {
+	// Handle Rename events: track pending renames
+	if event.Has(fsnotify.Rename) {
+		w.mu.Lock()
+		w.pendingRenames[event.Name] = pendingRename{
+			oldPath:   event.Name,
+			timestamp: time.Now(),
+		}
+		w.mu.Unlock()
+
+		// Schedule cleanup of stale pending renames
+		time.AfterFunc(renameTimeout, func() {
+			w.mu.Lock()
+			if pr, ok := w.pendingRenames[event.Name]; ok {
+				if time.Since(pr.timestamp) >= renameTimeout {
+					delete(w.pendingRenames, event.Name)
+				}
+			}
+			w.mu.Unlock()
+		})
+		return
+	}
+
 	// Handle new directory creation: add it to the watch list
 	if event.Has(fsnotify.Create) {
 		info, err := os.Stat(event.Name)
@@ -109,6 +153,13 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 					log.Printf("failed to watch new directory %s: %v", event.Name, err)
 				}
 			}
+			return
+		}
+
+		// Check if this Create follows a Rename (file was moved)
+		if w.tryMatchRename(event.Name) {
+			// Rename matched and processed; still take a snapshot of the new file
+			w.scheduleSnapshotIfTrackable(event.Name)
 			return
 		}
 	}
@@ -123,6 +174,73 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 	}
 
 	w.scheduleSnapshot(event.Name)
+}
+
+// tryMatchRename checks if a Create event at newPath matches any pending Rename.
+// It pairs Rename+Create events by checking if the old path was a tracked file
+// with the same extension in the same directory.
+func (w *Watcher) tryMatchRename(newPath string) bool {
+	if w.saveRename == nil {
+		return false
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for oldPath, pr := range w.pendingRenames {
+		if time.Since(pr.timestamp) > renameTimeout {
+			delete(w.pendingRenames, oldPath)
+			continue
+		}
+
+		if w.matchesPendingRename(oldPath) {
+			delete(w.pendingRenames, oldPath)
+
+			// Save rename record (outside lock via goroutine to avoid deadlock)
+			go w.processRename(oldPath, newPath)
+			return true
+		}
+	}
+
+	return false
+}
+
+// matchesPendingRename checks if the old path was a tracked file,
+// meaning a Rename event on it should be paired with the subsequent Create event.
+func (w *Watcher) matchesPendingRename(oldPath string) bool {
+	return w.shouldTrackPath(oldPath)
+}
+
+// shouldTrackPath checks if a path should be tracked (without checking if file exists).
+func (w *Watcher) shouldTrackPath(filePath string) bool {
+	if len(w.extSet) > 0 {
+		ext := filepath.Ext(filePath)
+		if _, ok := w.extSet[ext]; !ok {
+			return false
+		}
+	}
+	return !w.isExcluded(filePath)
+}
+
+// processRename saves the rename record and triggers callbacks.
+func (w *Watcher) processRename(oldPath, newPath string) {
+	_, err := w.saveRename(oldPath, newPath)
+	if err != nil {
+		log.Printf("failed to save rename %s -> %s: %v", oldPath, newPath, err)
+		return
+	}
+	log.Printf("rename recorded: %s -> %s", oldPath, newPath)
+	if w.OnRename != nil {
+		w.OnRename(oldPath, newPath)
+	}
+}
+
+// scheduleSnapshotIfTrackable schedules a snapshot only if the file should be tracked.
+func (w *Watcher) scheduleSnapshotIfTrackable(filePath string) {
+	if !w.shouldTrack(filePath) {
+		return
+	}
+	w.scheduleSnapshot(filePath)
 }
 
 func (w *Watcher) scheduleSnapshot(filePath string) {

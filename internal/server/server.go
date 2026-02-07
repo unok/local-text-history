@@ -86,6 +86,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/files", s.handleSearchFiles)
 	s.mux.HandleFunc("GET /api/files/{id}", s.handleGetFile)
 	s.mux.HandleFunc("GET /api/files/{id}/snapshots", s.handleGetSnapshots)
+	s.mux.HandleFunc("GET /api/files/{id}/renames", s.handleGetRenames)
 	s.mux.HandleFunc("GET /api/snapshots/{id}", s.handleGetSnapshot)
 	s.mux.HandleFunc("GET /api/snapshots/{id}/download", s.handleDownloadSnapshot)
 	s.mux.HandleFunc("GET /api/diff", s.handleDiff)
@@ -210,6 +211,24 @@ func (s *Server) handleGetSnapshots(w http.ResponseWriter, r *http.Request) {
 		snapshots = []db.Snapshot{}
 	}
 	writeJSON(w, http.StatusOK, snapshots)
+}
+
+func (s *Server) handleGetRenames(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	renames, err := s.db.GetRenames(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if renames == nil {
+		renames = []db.Rename{}
+	}
+	writeJSON(w, http.StatusOK, renames)
 }
 
 func (s *Server) handleGetSnapshot(w http.ResponseWriter, r *http.Request) {
