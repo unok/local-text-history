@@ -628,14 +628,14 @@ func (d *DB) GetStats() (Stats, error) {
 
 // GetRecentSnapshots returns the most recent snapshots across all files,
 // joined with their file path, ordered by timestamp descending.
-func (d *DB) GetRecentSnapshots(limit int) ([]HistoryEntry, error) {
+func (d *DB) GetRecentSnapshots(limit, offset int) ([]HistoryEntry, error) {
 	rows, err := d.db.Query(
 		`SELECT s.id, s.file_id, f.path, s.size, s.hash, s.timestamp
 		 FROM snapshots s
 		 JOIN files f ON s.file_id = f.id
 		 ORDER BY s.timestamp DESC, s.id DESC
-		 LIMIT ?`,
-		limit,
+		 LIMIT ? OFFSET ?`,
+		limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting recent snapshots: %w", err)

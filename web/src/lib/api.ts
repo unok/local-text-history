@@ -139,10 +139,18 @@ export function useRenames(fileId: string) {
   })
 }
 
-export function useHistory() {
+export interface HistoryResponse {
+  entries: HistoryEntry[]
+  hasMore: boolean
+}
+
+export function useHistory(limit: number, offset: number) {
   return useQuery({
-    queryKey: ['history'],
-    queryFn: () => fetchJSON<HistoryEntry[]>('/api/history?limit=200'),
+    queryKey: ['history', limit, offset],
+    queryFn: () =>
+      fetchJSON<HistoryResponse>(
+        `/api/history?limit=${limit}&offset=${offset}`,
+      ),
   })
 }
 

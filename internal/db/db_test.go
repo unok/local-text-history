@@ -292,7 +292,7 @@ func TestSearchFiles_Pagination(t *testing.T) {
 func TestGetRecentSnapshots_Empty(t *testing.T) {
 	d := newTestDB(t, 0)
 
-	entries, err := d.GetRecentSnapshots(50)
+	entries, err := d.GetRecentSnapshots(50, 0)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestGetRecentSnapshots_WithData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := d.GetRecentSnapshots(50)
+	entries, err := d.GetRecentSnapshots(50, 0)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -364,12 +364,53 @@ func TestGetRecentSnapshots_Limit(t *testing.T) {
 		}
 	}
 
-	entries, err := d.GetRecentSnapshots(3)
+	entries, err := d.GetRecentSnapshots(3, 0)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
 	if len(entries) != 3 {
 		t.Errorf("got %d entries, want 3", len(entries))
+	}
+}
+
+func TestGetRecentSnapshots_Offset(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	for i := range 5 {
+		content := []byte(fmt.Sprintf("content-%d", i))
+		path := fmt.Sprintf("/tmp/offset%d.go", i)
+		if _, err := d.SaveSnapshot(path, content); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	page1, err := d.GetRecentSnapshots(2, 0)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots(2, 0) error: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Errorf("page1: got %d entries, want 2", len(page1))
+	}
+
+	page2, err := d.GetRecentSnapshots(2, 2)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots(2, 2) error: %v", err)
+	}
+	if len(page2) != 2 {
+		t.Errorf("page2: got %d entries, want 2", len(page2))
+	}
+
+	// Ensure pages don't overlap
+	if page1[0].SnapshotID == page2[0].SnapshotID {
+		t.Error("page1 and page2 overlap")
+	}
+
+	page3, err := d.GetRecentSnapshots(2, 4)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots(2, 4) error: %v", err)
+	}
+	if len(page3) != 1 {
+		t.Errorf("page3: got %d entries, want 1", len(page3))
 	}
 }
 
@@ -941,7 +982,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 
 	// Verify GetRecentSnapshots works across migrated and new data
-	entries, err := d.GetRecentSnapshots(50)
+	entries, err := d.GetRecentSnapshots(50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

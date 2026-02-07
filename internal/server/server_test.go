@@ -455,12 +455,18 @@ func TestHandleHistory_Empty(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var entries []db.HistoryEntry
-	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("got %d entries, want 0", len(entries))
+	if len(result.Entries) != 0 {
+		t.Errorf("got %d entries, want 0", len(result.Entries))
+	}
+	if result.HasMore {
+		t.Error("hasMore = true, want false")
 	}
 }
 
@@ -482,20 +488,26 @@ func TestHandleHistory_WithData(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var entries []db.HistoryEntry
-	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
-		t.Errorf("got %d entries, want 2", len(entries))
+	if len(result.Entries) != 2 {
+		t.Errorf("got %d entries, want 2", len(result.Entries))
+	}
+	if result.HasMore {
+		t.Error("hasMore = true, want false")
 	}
 
 	// Verify newest first
-	if entries[0].FilePath != "/tmp/hist2.go" {
-		t.Errorf("entries[0].FilePath = %s, want /tmp/hist2.go", entries[0].FilePath)
+	if result.Entries[0].FilePath != "/tmp/hist2.go" {
+		t.Errorf("entries[0].FilePath = %s, want /tmp/hist2.go", result.Entries[0].FilePath)
 	}
-	if entries[1].FilePath != "/tmp/hist1.go" {
-		t.Errorf("entries[1].FilePath = %s, want /tmp/hist1.go", entries[1].FilePath)
+	if result.Entries[1].FilePath != "/tmp/hist1.go" {
+		t.Errorf("entries[1].FilePath = %s, want /tmp/hist1.go", result.Entries[1].FilePath)
 	}
 }
 
@@ -517,12 +529,67 @@ func TestHandleHistory_CustomLimit(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	var entries []db.HistoryEntry
-	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 3 {
-		t.Errorf("got %d entries, want 3", len(entries))
+	if len(result.Entries) != 3 {
+		t.Errorf("got %d entries, want 3", len(result.Entries))
+	}
+	if !result.HasMore {
+		t.Error("hasMore = false, want true (5 items with limit=3)")
+	}
+}
+
+func TestHandleHistory_Pagination(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	for i := range 5 {
+		path := fmt.Sprintf("/tmp/hpage%d.go", i)
+		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Page 1: offset=0, limit=2
+	req := httptest.NewRequest("GET", "/api/history?limit=2&offset=0", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var page1 struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&page1); err != nil {
+		t.Fatal(err)
+	}
+	if len(page1.Entries) != 2 {
+		t.Errorf("page1: got %d entries, want 2", len(page1.Entries))
+	}
+	if !page1.HasMore {
+		t.Error("page1: hasMore = false, want true")
+	}
+
+	// Page 3: offset=4, limit=2
+	req = httptest.NewRequest("GET", "/api/history?limit=2&offset=4", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var page3 struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&page3); err != nil {
+		t.Fatal(err)
+	}
+	if len(page3.Entries) != 1 {
+		t.Errorf("page3: got %d entries, want 1", len(page3.Entries))
+	}
+	if page3.HasMore {
+		t.Error("page3: hasMore = true, want false")
 	}
 }
 

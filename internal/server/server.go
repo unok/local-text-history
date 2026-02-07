@@ -105,15 +105,33 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	entries, err := s.db.GetRecentSnapshots(limit)
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	entries, err := s.db.GetRecentSnapshots(limit+1, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[:limit]
+	}
 	if entries == nil {
 		entries = []db.HistoryEntry{}
 	}
-	writeJSON(w, http.StatusOK, entries)
+
+	type historyResponse struct {
+		Entries []db.HistoryEntry `json:"entries"`
+		HasMore bool             `json:"hasMore"`
+	}
+	writeJSON(w, http.StatusOK, historyResponse{
+		Entries: entries,
+		HasMore: hasMore,
+	})
 }
 
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
