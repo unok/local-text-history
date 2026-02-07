@@ -13,6 +13,7 @@
 
 .d2h-scope {
   /* CSS custom properties (originally on :host,:root) */
+  --d2h-color: #1f2937;
   --d2h-bg-color: #fff;
   --d2h-border-color: #ddd;
   --d2h-dim-color: rgba(0, 0, 0, 0.3);
@@ -36,6 +37,8 @@
   --d2h-info-border-color: #d5e4f2;
   --d2h-change-label-color: #d0b44c;
   --d2h-moved-label-color: #3572b0;
+
+  color: var(--d2h-color);
 
   /* diff2html component styles */
 
@@ -399,6 +402,7 @@
 }
 
 .dark .d2h-scope {
+  --d2h-color: #e5e7eb;
   --d2h-bg-color: #1f2937;
   --d2h-border-color: #374151;
   --d2h-dim-color: rgba(255, 255, 255, 0.4);
