@@ -960,6 +960,10 @@ func TestHandleHistory_QueryFilterWithPagination(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("page1: status = %d, want %d", w.Code, http.StatusOK)
+	}
+
 	var page1 struct {
 		Entries []db.HistoryEntry `json:"entries"`
 		HasMore bool             `json:"hasMore"`
@@ -978,6 +982,10 @@ func TestHandleHistory_QueryFilterWithPagination(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/history?q=srv_qp&limit=3&offset=3", nil)
 	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("page2: status = %d, want %d", w.Code, http.StatusOK)
+	}
 
 	var page2 struct {
 		Entries []db.HistoryEntry `json:"entries"`
@@ -1008,6 +1016,10 @@ func TestHandleHistory_EmptyQueryReturnsAll(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/history?q=", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
 
 	var result struct {
 		Entries []db.HistoryEntry `json:"entries"`

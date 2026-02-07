@@ -664,11 +664,11 @@ func (d *DB) getRecentSnapshotsFiltered(limit, offset int, query string) ([]Hist
 			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
 			FROM snapshots s
 			JOIN files f ON s.file_id = f.id
-			WHERE f.path LIKE '%' || ? || '%'
+			WHERE f.path LIKE '%' || ? || '%' COLLATE NOCASE
 			UNION ALL
 			SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
 			FROM renames r
-			WHERE r.new_path LIKE '%' || ? || '%' OR r.old_path LIKE '%' || ? || '%'
+			WHERE r.new_path LIKE '%' || ? || '%' COLLATE NOCASE OR r.old_path LIKE '%' || ? || '%' COLLATE NOCASE
 		) ORDER BY timestamp DESC, entry_id DESC
 		LIMIT ? OFFSET ?`,
 		query, query, query, limit, offset,
