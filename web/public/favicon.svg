@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Document body (with folded corner) -->
+  <path d="M5 2h13l8 8v19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V2z" fill="#2563eb" opacity="0.12"/>
+  <path d="M5 2h13l8 8v19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V2z" stroke="#2563eb" stroke-width="2" fill="none"/>
+  <!-- Folded corner -->
+  <path d="M18 2v7a1 1 0 0 0 1 1h7" stroke="#2563eb" stroke-width="2" fill="none"/>
+  <!-- Clock circle (overlaid on document) -->
+  <circle cx="16" cy="20" r="6" fill="white" stroke="#2563eb" stroke-width="2"/>
+  <!-- Clock hands -->
+  <line x1="16" y1="20" x2="16" y2="16.5" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+  <line x1="16" y1="20" x2="19" y2="20" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+</svg>
