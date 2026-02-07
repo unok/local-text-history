@@ -964,3 +964,98 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 		t.Errorf("TotalFiles = %d, want 1", stats.TotalFiles)
 	}
 }
+
+func TestSaveSnapshotBatch_Basic(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	filePaths := []string{"/tmp/a.go", "/tmp/b.go", "/tmp/c.go"}
+	contents := [][]byte{[]byte("aaa"), []byte("bbb"), []byte("ccc")}
+
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("SaveSnapshotBatch() item %d error: %v", i, err)
+		}
+	}
+	for i, s := range saved {
+		if !s {
+			t.Errorf("SaveSnapshotBatch() item %d saved = false, want true", i)
+		}
+	}
+
+	stats, err := d.GetStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Errorf("TotalFiles = %d, want 3", stats.TotalFiles)
+	}
+	if stats.TotalSnapshots != 3 {
+		t.Errorf("TotalSnapshots = %d, want 3", stats.TotalSnapshots)
+	}
+}
+
+func TestSaveSnapshotBatch_DuplicateSkip(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	// First batch
+	filePaths := []string{"/tmp/dup.go"}
+	contents := [][]byte{[]byte("content")}
+	d.SaveSnapshotBatch(filePaths, contents)
+
+	// Second batch with same content
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+
+	if errs[0] != nil {
+		t.Fatalf("SaveSnapshotBatch() error: %v", errs[0])
+	}
+	if saved[0] {
+		t.Error("SaveSnapshotBatch() saved duplicate, want skip")
+	}
+
+	stats, err := d.GetStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalSnapshots != 1 {
+		t.Errorf("TotalSnapshots = %d, want 1", stats.TotalSnapshots)
+	}
+}
+
+func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
+	d := newTestDB(t, 0)
+
+	n := 100
+	filePaths := make([]string, n)
+	contents := make([][]byte, n)
+	for i := range n {
+		filePaths[i] = fmt.Sprintf("/tmp/batch%d.go", i)
+		contents[i] = []byte(fmt.Sprintf("content %d", i))
+	}
+
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("item %d error: %v", i, err)
+		}
+	}
+	savedCount := 0
+	for _, s := range saved {
+		if s {
+			savedCount++
+		}
+	}
+	if savedCount != n {
+		t.Errorf("saved %d, want %d", savedCount, n)
+	}
+
+	stats, err := d.GetStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalFiles != n {
+		t.Errorf("TotalFiles = %d, want %d", stats.TotalFiles, n)
+	}
+}

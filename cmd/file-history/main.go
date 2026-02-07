@@ -69,8 +69,9 @@ func main() {
 		log.Fatalf("failed to create watcher: %v", err)
 	}
 
-	// Wire rename detection
+	// Wire rename detection and batch saving
 	w.SetRenameSaver(database.SaveRename)
+	w.SetBatchSaver(database.SaveSnapshotBatch)
 
 	// Set up HTTP server
 	srv := server.New(database, staticFS, cfg.WatchDirs)

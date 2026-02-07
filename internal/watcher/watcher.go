@@ -15,11 +15,30 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+const (
+	saveRetryCount = 3
+	saveRetryDelay = 1 * time.Second
+	saveQueueSize  = 10000
+)
+
 // SnapshotSaver is called when a file change should be persisted.
 type SnapshotSaver func(filePath string, content []byte) (bool, error)
 
+// SnapshotBatchSaver saves multiple snapshots in a single transaction.
+// Returns a saved flag and error for each input item.
+type SnapshotBatchSaver func(filePaths []string, contents [][]byte) ([]bool, []error)
+
 // RenameSaver is called when a file rename is detected.
 type RenameSaver func(oldPath, newPath string) (string, error)
+
+// saveJob represents a queued DB write operation.
+type saveJob struct {
+	filePath string
+	content  []byte
+	oldPath  string // rename only
+	newPath  string // rename only
+	rename   bool
+}
 
 // Config holds watcher configuration.
 type Config struct {
@@ -41,6 +60,7 @@ type Watcher struct {
 	fsWatcher      *fsnotify.Watcher
 	config         Config
 	save           SnapshotSaver
+	saveBatch      SnapshotBatchSaver
 	saveRename     RenameSaver
 	timers         map[string]*time.Timer
 	mu             sync.Mutex
@@ -48,6 +68,7 @@ type Watcher struct {
 	OnSnapshot     func(filePath string)
 	OnRename       func(oldPath, newPath string)
 	pendingRenames map[string]pendingRename
+	saveCh         chan saveJob
 }
 
 // New creates a Watcher with the given configuration and save function.
@@ -69,6 +90,7 @@ func New(cfg Config, save SnapshotSaver) (*Watcher, error) {
 		timers:         make(map[string]*time.Timer),
 		extSet:         extSet,
 		pendingRenames: make(map[string]pendingRename),
+		saveCh:         make(chan saveJob, saveQueueSize),
 	}
 
 	for _, dir := range cfg.WatchDirs {
@@ -86,8 +108,14 @@ func (w *Watcher) SetRenameSaver(saver RenameSaver) {
 	w.saveRename = saver
 }
 
+// SetBatchSaver sets the function for bulk snapshot saving.
+func (w *Watcher) SetBatchSaver(saver SnapshotBatchSaver) {
+	w.saveBatch = saver
+}
+
 // Run starts the event loop. It blocks until the done channel is closed.
 func (w *Watcher) Run(done <-chan struct{}) {
+	go w.saveWorker(done)
 	for {
 		select {
 		case <-done:
@@ -103,6 +131,161 @@ func (w *Watcher) Run(done <-chan struct{}) {
 			}
 			log.Printf("watcher error: %v", err)
 		}
+	}
+}
+
+// saveWorker processes DB write jobs, batching snapshots for bulk insert.
+func (w *Watcher) saveWorker(done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			w.processBatch(w.drainAll())
+			return
+		case job := <-w.saveCh:
+			w.processBatch(w.drainBatch(job))
+		}
+	}
+}
+
+// drainBatch collects the first job plus any additional queued jobs without blocking.
+func (w *Watcher) drainBatch(first saveJob) []saveJob {
+	batch := []saveJob{first}
+	for len(batch) < saveQueueSize {
+		select {
+		case j := <-w.saveCh:
+			batch = append(batch, j)
+		default:
+			return batch
+		}
+	}
+	return batch
+}
+
+// drainAll collects all remaining queued jobs without blocking.
+func (w *Watcher) drainAll() []saveJob {
+	var batch []saveJob
+	for {
+		select {
+		case j := <-w.saveCh:
+			batch = append(batch, j)
+		default:
+			return batch
+		}
+	}
+}
+
+// processBatch handles a batch of save jobs, using bulk insert for snapshots.
+func (w *Watcher) processBatch(batch []saveJob) {
+	if len(batch) == 0 {
+		return
+	}
+
+	var snapshots []saveJob
+	var renames []saveJob
+	for _, j := range batch {
+		if j.rename {
+			renames = append(renames, j)
+		} else {
+			snapshots = append(snapshots, j)
+		}
+	}
+
+	if len(snapshots) > 0 {
+		w.processSnapshotBatch(snapshots)
+	}
+	for _, r := range renames {
+		w.processSingleRename(r.oldPath, r.newPath)
+	}
+}
+
+// processSnapshotBatch saves snapshots using bulk insert with retry fallback.
+func (w *Watcher) processSnapshotBatch(snapshots []saveJob) {
+	filePaths := make([]string, len(snapshots))
+	contents := make([][]byte, len(snapshots))
+	for i, s := range snapshots {
+		filePaths[i] = s.filePath
+		contents[i] = s.content
+	}
+
+	var savedSlice []bool
+	var errSlice []error
+
+	saver := w.saveBatch
+	if saver == nil {
+		// Fallback: save individually with retry
+		savedSlice = make([]bool, len(snapshots))
+		errSlice = make([]error, len(snapshots))
+		for i := range snapshots {
+			for attempt := range saveRetryCount {
+				savedSlice[i], errSlice[i] = w.save(filePaths[i], contents[i])
+				if errSlice[i] == nil {
+					break
+				}
+				if !strings.Contains(errSlice[i].Error(), "database is locked") {
+					break
+				}
+				if attempt < saveRetryCount-1 {
+					time.Sleep(saveRetryDelay)
+				}
+			}
+		}
+	} else {
+		for attempt := range saveRetryCount {
+			savedSlice, errSlice = saver(filePaths, contents)
+			if !w.hasDatabaseLockedError(errSlice) {
+				break
+			}
+			if attempt < saveRetryCount-1 {
+				time.Sleep(saveRetryDelay)
+			}
+		}
+	}
+
+	for i, s := range snapshots {
+		if errSlice[i] != nil {
+			log.Printf("failed to save snapshot for %s: %v", s.filePath, errSlice[i])
+			continue
+		}
+		if savedSlice[i] {
+			log.Printf("snapshot saved: %s", s.filePath)
+			if w.OnSnapshot != nil {
+				go w.OnSnapshot(s.filePath)
+			}
+		}
+	}
+}
+
+func (w *Watcher) hasDatabaseLockedError(errs []error) bool {
+	for _, err := range errs {
+		if err != nil && strings.Contains(err.Error(), "database is locked") {
+			return true
+		}
+	}
+	return false
+}
+
+// processSingleRename saves a single rename record with retry.
+func (w *Watcher) processSingleRename(oldPath, newPath string) {
+	var err error
+	for attempt := range saveRetryCount {
+		_, err = w.saveRename(oldPath, newPath)
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		if attempt < saveRetryCount-1 {
+			time.Sleep(saveRetryDelay)
+		}
+	}
+	if err != nil {
+		log.Printf("failed to save rename %s -> %s: %v", oldPath, newPath, err)
+		return
+	}
+	log.Printf("rename recorded: %s -> %s", oldPath, newPath)
+	if w.OnRename != nil {
+		w.OnRename(oldPath, newPath)
 	}
 }
 
@@ -222,17 +405,9 @@ func (w *Watcher) shouldTrackPath(filePath string) bool {
 	return !w.isExcluded(filePath)
 }
 
-// processRename saves the rename record and triggers callbacks.
+// processRename queues a rename record for saving.
 func (w *Watcher) processRename(oldPath, newPath string) {
-	_, err := w.saveRename(oldPath, newPath)
-	if err != nil {
-		log.Printf("failed to save rename %s -> %s: %v", oldPath, newPath, err)
-		return
-	}
-	log.Printf("rename recorded: %s -> %s", oldPath, newPath)
-	if w.OnRename != nil {
-		w.OnRename(oldPath, newPath)
-	}
+	w.saveCh <- saveJob{rename: true, oldPath: oldPath, newPath: newPath}
 }
 
 // scheduleSnapshotIfTrackable schedules a snapshot only if the file should be tracked.
@@ -290,17 +465,7 @@ func (w *Watcher) takeSnapshot(filePath string) {
 		return
 	}
 
-	saved, err := w.save(filePath, content)
-	if err != nil {
-		log.Printf("failed to save snapshot for %s: %v", filePath, err)
-		return
-	}
-	if saved {
-		log.Printf("snapshot saved: %s", filePath)
-		if w.OnSnapshot != nil {
-			go w.OnSnapshot(filePath)
-		}
-	}
+	w.saveCh <- saveJob{filePath: filePath, content: content}
 }
 
 func (w *Watcher) addDirRecursive(root string) error {

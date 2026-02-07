@@ -1,9 +1,12 @@
 package watcher
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -579,5 +582,225 @@ func TestWatcher_OnSnapshotNotCalledOnDuplicate(t *testing.T) {
 	// OnSnapshot should only be called once (the first save)
 	if len(notified) != 1 {
 		t.Errorf("OnSnapshot callback on duplicate: got %d calls, want 1", len(notified))
+	}
+}
+
+func TestTakeSnapshot_RetriesOnDatabaseLocked(t *testing.T) {
+	dir := t.TempDir()
+
+	var attempts atomic.Int32
+
+	saver := func(path string, content []byte) (bool, error) {
+		n := attempts.Add(1)
+		if n < 3 {
+			return false, errors.New("beginning transaction: database is locked")
+		}
+		return true, nil
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{dir},
+		Extensions:      []string{".txt"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	var mu sync.Mutex
+	var notified []string
+	w.OnSnapshot = func(filePath string) {
+		mu.Lock()
+		notified = append(notified, filePath)
+		mu.Unlock()
+	}
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	testFile := filepath.Join(dir, "retry.txt")
+	if err := os.WriteFile(testFile, []byte("retry content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for debounce + retries (1s debounce + 2*1s retry delays + buffer)
+	time.Sleep(5 * time.Second)
+	close(done)
+
+	time.Sleep(100 * time.Millisecond)
+
+	if got := attempts.Load(); got != 3 {
+		t.Errorf("save attempts = %d, want 3", got)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(notified) != 1 {
+		t.Errorf("OnSnapshot callback: got %d calls, want 1", len(notified))
+	}
+}
+
+func TestTakeSnapshot_NoRetryOnOtherErrors(t *testing.T) {
+	dir := t.TempDir()
+
+	var attempts atomic.Int32
+
+	saver := func(path string, content []byte) (bool, error) {
+		attempts.Add(1)
+		return false, errors.New("some other error")
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{dir},
+		Extensions:      []string{".txt"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	testFile := filepath.Join(dir, "noretry.txt")
+	if err := os.WriteFile(testFile, []byte("no retry content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(3 * time.Second)
+	close(done)
+
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("save attempts = %d, want 1 (no retry for non-locked errors)", got)
+	}
+}
+
+func TestTakeSnapshot_AllRetriesFail(t *testing.T) {
+	dir := t.TempDir()
+
+	var attempts atomic.Int32
+
+	saver := func(path string, content []byte) (bool, error) {
+		attempts.Add(1)
+		return false, errors.New("inserting file: database is locked")
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{dir},
+		Extensions:      []string{".txt"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	var mu sync.Mutex
+	var notified []string
+	w.OnSnapshot = func(filePath string) {
+		mu.Lock()
+		notified = append(notified, filePath)
+		mu.Unlock()
+	}
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	testFile := filepath.Join(dir, "allfail.txt")
+	if err := os.WriteFile(testFile, []byte("fail content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for debounce + all retries (1s debounce + 2*1s retry delays + buffer)
+	time.Sleep(5 * time.Second)
+	close(done)
+
+	time.Sleep(100 * time.Millisecond)
+
+	if got := attempts.Load(); got != int32(saveRetryCount) {
+		t.Errorf("save attempts = %d, want %d", got, saveRetryCount)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(notified) != 0 {
+		t.Errorf("OnSnapshot callback: got %d calls, want 0 (all retries failed)", len(notified))
+	}
+}
+
+func TestSaveQueue_SerializesWrites(t *testing.T) {
+	dir := t.TempDir()
+
+	var concurrent atomic.Int32
+	var maxConcurrent atomic.Int32
+	var savedCount atomic.Int32
+
+	saver := func(path string, content []byte) (bool, error) {
+		c := concurrent.Add(1)
+		defer concurrent.Add(-1)
+		// Track max concurrency
+		for {
+			cur := maxConcurrent.Load()
+			if c <= cur || maxConcurrent.CompareAndSwap(cur, c) {
+				break
+			}
+		}
+		// Simulate slow DB write
+		time.Sleep(10 * time.Millisecond)
+		savedCount.Add(1)
+		return true, nil
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{dir},
+		Extensions:      []string{".txt"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	// Create 50 files simultaneously
+	fileCount := 50
+	for i := range fileCount {
+		f := filepath.Join(dir, fmt.Sprintf("file%d.txt", i))
+		if err := os.WriteFile(f, []byte(fmt.Sprintf("content %d", i)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Wait for debounce + all saves to complete
+	time.Sleep(4 * time.Second)
+	close(done)
+
+	time.Sleep(200 * time.Millisecond)
+
+	if got := maxConcurrent.Load(); got != 1 {
+		t.Errorf("max concurrent saves = %d, want 1 (serialized)", got)
+	}
+	if got := savedCount.Load(); got != int32(fileCount) {
+		t.Errorf("saved count = %d, want %d", got, fileCount)
 	}
 }

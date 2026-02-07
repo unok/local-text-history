@@ -395,18 +395,63 @@ func newUUIDv7() string {
 // SaveSnapshot saves a file snapshot. It returns false if the content
 // hash matches the latest snapshot (duplicate skip).
 func (d *DB) SaveSnapshot(filePath string, content []byte) (bool, error) {
-	hash := sha256sum(content)
-
 	tx, err := d.db.Begin()
 	if err != nil {
 		return false, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
 
+	saved, err := d.saveSnapshotInTx(tx, filePath, content)
+	if err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing transaction: %w", err)
+	}
+	return saved, nil
+}
+
+// SaveSnapshotBatch saves multiple file snapshots in a single transaction.
+// Returns a saved flag and error for each input item.
+func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte) ([]bool, []error) {
+	n := len(filePaths)
+	saved := make([]bool, n)
+	errs := make([]error, n)
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		for i := range errs {
+			errs[i] = fmt.Errorf("beginning transaction: %w", err)
+		}
+		return saved, errs
+	}
+	defer tx.Rollback()
+
+	for i := range n {
+		saved[i], errs[i] = d.saveSnapshotInTx(tx, filePaths[i], contents[i])
+	}
+
+	if err := tx.Commit(); err != nil {
+		for i := range errs {
+			if errs[i] == nil && saved[i] {
+				errs[i] = fmt.Errorf("committing transaction: %w", err)
+				saved[i] = false
+			}
+		}
+	}
+
+	return saved, errs
+}
+
+// saveSnapshotInTx performs the snapshot save logic within an existing transaction.
+func (d *DB) saveSnapshotInTx(tx *sql.Tx, filePath string, content []byte) (bool, error) {
+	hash := sha256sum(content)
+
 	// Check if file already exists and get its ID + latest snapshot hash
 	var fileID string
 	var lastHash sql.NullString
-	err = tx.QueryRow(
+	err := tx.QueryRow(
 		`SELECT f.id, (
 			SELECT hash FROM snapshots WHERE file_id = f.id ORDER BY timestamp DESC LIMIT 1
 		 ) FROM files f WHERE f.path = ?`,
@@ -466,9 +511,6 @@ func (d *DB) SaveSnapshot(filePath string, content []byte) (bool, error) {
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("committing transaction: %w", err)
-	}
 	return true, nil
 }
 
