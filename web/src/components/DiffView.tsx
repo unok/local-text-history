@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useDiff } from '../lib/api'
 import { html as diff2htmlHtml } from 'diff2html'
+import { ColorSchemeType } from 'diff2html/lib/types'
+import { useTheme } from '../lib/theme'
 import '../styles/diff2html-scoped.css'
 
 type OutputFormat = 'side-by-side' | 'line-by-line'
@@ -12,6 +14,7 @@ interface DiffViewProps {
 
 export default function DiffView({ fromId, toId }: DiffViewProps) {
   const [format, setFormat] = useState<OutputFormat>('side-by-side')
+  const { theme } = useTheme()
   const { data, isLoading, error } = useDiff(fromId, toId)
 
   if (toId === null) {
@@ -38,10 +41,12 @@ export default function DiffView({ fromId, toId }: DiffViewProps) {
     return <p className="text-gray-500 dark:text-gray-400 text-sm">No differences found.</p>
   }
 
+  const colorScheme = theme === 'dark' ? ColorSchemeType.DARK : ColorSchemeType.LIGHT
   const diffHtml = diff2htmlHtml(data.diff, {
     drawFileList: false,
     matching: 'lines',
     outputFormat: format,
+    colorScheme,
   })
 
   return (
