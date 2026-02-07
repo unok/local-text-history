@@ -742,6 +742,226 @@ func TestTakeSnapshot_AllRetriesFail(t *testing.T) {
 	}
 }
 
+func TestScanExistingFiles_NewDirectory(t *testing.T) {
+	watchDir := t.TempDir()
+
+	var mu sync.Mutex
+	var saved []string
+
+	saver := func(path string, content []byte) (bool, error) {
+		mu.Lock()
+		saved = append(saved, path)
+		mu.Unlock()
+		return true, nil
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{watchDir},
+		Extensions:      []string{".go", ".txt"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	// Prepare a directory with files outside the watch tree
+	srcDir := t.TempDir()
+	subDir := filepath.Join(srcDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 5 {
+		f := filepath.Join(srcDir, fmt.Sprintf("file%d.go", i))
+		if err := os.WriteFile(f, []byte(fmt.Sprintf("package f%d", i)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 3 {
+		f := filepath.Join(subDir, fmt.Sprintf("sub%d.txt", i))
+		if err := os.WriteFile(f, []byte(fmt.Sprintf("sub content %d", i)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Move the prepared directory into the watch tree (triggers Create event)
+	destDir := filepath.Join(watchDir, "newproject")
+	if err := os.Rename(srcDir, destDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for debounce + scan to complete
+	time.Sleep(3 * time.Second)
+	close(done)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// All 8 files (5 .go + 3 .txt) should be saved
+	if len(saved) < 8 {
+		t.Errorf("scan new directory: got %d saves, want at least 8", len(saved))
+	}
+}
+
+func TestScanExistingFiles_RespectsFilters(t *testing.T) {
+	watchDir := t.TempDir()
+
+	var mu sync.Mutex
+	var saved []string
+
+	saver := func(path string, content []byte) (bool, error) {
+		mu.Lock()
+		saved = append(saved, path)
+		mu.Unlock()
+		return true, nil
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{watchDir},
+		Extensions:      []string{".go"},
+		ExcludePatterns: []string{"**/vendor/**"},
+		DebounceSec:     1,
+		MaxFileSize:     100,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	// Prepare directory with various files
+	srcDir := t.TempDir()
+
+	// Trackable file
+	if err := os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Wrong extension — should be excluded
+	if err := os.WriteFile(filepath.Join(srcDir, "readme.md"), []byte("# readme"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Excluded directory
+	vendorDir := filepath.Join(srcDir, "vendor")
+	if err := os.MkdirAll(vendorDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vendorDir, "lib.go"), []byte("package lib"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Binary file with .go extension
+	if err := os.WriteFile(filepath.Join(srcDir, "binary.go"), []byte{0x89, 0x50, 0x00, 0x4E}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Oversized file
+	bigContent := make([]byte, 200)
+	for i := range bigContent {
+		bigContent[i] = 'x'
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "big.go"), bigContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Move into watch tree
+	destDir := filepath.Join(watchDir, "filtered")
+	if err := os.Rename(srcDir, destDir); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(3 * time.Second)
+	close(done)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Only main.go should be saved (correct ext, not excluded, not binary, not oversized)
+	if len(saved) != 1 {
+		t.Errorf("filtered scan: got %d saves, want 1", len(saved))
+		for _, s := range saved {
+			t.Logf("  saved: %s", s)
+		}
+	}
+	if len(saved) == 1 && filepath.Base(saved[0]) != "main.go" {
+		t.Errorf("saved file = %s, want main.go", filepath.Base(saved[0]))
+	}
+}
+
+func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create some files in the directory
+	for i := range 3 {
+		f := filepath.Join(dir, fmt.Sprintf("file%d.go", i))
+		if err := os.WriteFile(f, []byte(fmt.Sprintf("package f%d", i)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var scanCount atomic.Int32
+
+	saver := func(path string, content []byte) (bool, error) {
+		scanCount.Add(1)
+		return true, nil
+	}
+
+	cfg := Config{
+		WatchDirs:       []string{t.TempDir()},
+		Extensions:      []string{".go"},
+		ExcludePatterns: []string{},
+		DebounceSec:     1,
+		MaxFileSize:     1048576,
+	}
+
+	w, err := New(cfg, saver)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	defer w.Close()
+
+	done := make(chan struct{})
+	go w.Run(done)
+
+	// Pre-register the directory as scanning to verify duplicate rejection
+	if !w.tryStartScan(dir) {
+		t.Fatal("tryStartScan should succeed on first call")
+	}
+
+	// Second call should be rejected while first is active
+	w.scanExistingFiles(dir)
+
+	// Wait briefly for save worker
+	time.Sleep(200 * time.Millisecond)
+
+	got := scanCount.Load()
+	if got != 0 {
+		t.Errorf("duplicate scan: got %d saves, want 0 (scan should be skipped)", got)
+	}
+
+	// Clean up the pre-registered entry
+	w.finishScan(dir)
+
+	// Now a real scan should work
+	w.scanExistingFiles(dir)
+
+	time.Sleep(500 * time.Millisecond)
+	close(done)
+
+	got = scanCount.Load()
+	if got != 3 {
+		t.Errorf("after finish: got %d saves, want 3", got)
+	}
+}
+
 func TestSaveQueue_SerializesWrites(t *testing.T) {
 	dir := t.TempDir()
 
