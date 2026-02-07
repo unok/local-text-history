@@ -703,7 +703,8 @@ func (d *DB) CreateDatabaseSnapshot(tmpDir string) (string, error) {
 
 // SaveRename records a file rename event. It looks up the old file by path
 // and creates a new file record for the new path if one doesn't exist.
-// Returns the new file's ID.
+// Returns the new file's ID. If the old file is not tracked, returns ("", nil)
+// to indicate a skip (e.g. temp file renamed to real file).
 func (d *DB) SaveRename(oldPath, newPath string) (string, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -711,9 +712,12 @@ func (d *DB) SaveRename(oldPath, newPath string) (string, error) {
 	}
 	defer tx.Rollback()
 
-	// Look up old file
+	// Look up old file — skip if not tracked (temp file rename)
 	var oldFileID string
 	err = tx.QueryRow(`SELECT id FROM files WHERE path = ?`, oldPath).Scan(&oldFileID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("looking up old file %q: %w", oldPath, err)
 	}

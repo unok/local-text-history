@@ -266,9 +266,10 @@ func (w *Watcher) hasDatabaseLockedError(errs []error) bool {
 
 // processSingleRename saves a single rename record with retry.
 func (w *Watcher) processSingleRename(oldPath, newPath string) {
+	var newFileID string
 	var err error
 	for attempt := range saveRetryCount {
-		_, err = w.saveRename(oldPath, newPath)
+		newFileID, err = w.saveRename(oldPath, newPath)
 		if err == nil {
 			break
 		}
@@ -281,6 +282,10 @@ func (w *Watcher) processSingleRename(oldPath, newPath string) {
 	}
 	if err != nil {
 		log.Printf("failed to save rename %s -> %s: %v", oldPath, newPath, err)
+		return
+	}
+	if newFileID == "" {
+		// Old file not tracked (e.g. temp file renamed to real file) — skip silently
 		return
 	}
 	log.Printf("rename recorded: %s -> %s", oldPath, newPath)

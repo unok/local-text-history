@@ -682,9 +682,12 @@ func TestSaveRename_ChainedRenames(t *testing.T) {
 func TestSaveRename_OldFileNotFound(t *testing.T) {
 	d := newTestDB(t, 0)
 
-	_, err := d.SaveRename("/tmp/nonexistent.go", "/tmp/new.go")
-	if err == nil {
-		t.Fatal("SaveRename() should error when old file doesn't exist")
+	newFileID, err := d.SaveRename("/tmp/nonexistent.go", "/tmp/new.go")
+	if err != nil {
+		t.Fatalf("SaveRename() unexpected error: %v", err)
+	}
+	if newFileID != "" {
+		t.Errorf("SaveRename() returned %q, want empty string for untracked old file", newFileID)
 	}
 }
 
