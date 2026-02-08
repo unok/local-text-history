@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/unok/local-text-history/internal/config"
 )
 
 const (
@@ -20,31 +21,39 @@ const (
 )
 
 // SnapshotSaver is called when a file change should be persisted.
-type SnapshotSaver func(filePath string, content []byte) (bool, error)
+type SnapshotSaver func(filePath string, content []byte, maxSnapshots int) (bool, error)
 
 // SnapshotBatchSaver saves multiple snapshots in a single transaction.
 // Returns a saved flag and error for each input item.
-type SnapshotBatchSaver func(filePaths []string, contents [][]byte) ([]bool, []error)
+type SnapshotBatchSaver func(filePaths []string, contents [][]byte, maxSnapshots []int) ([]bool, []error)
 
 // RenameSaver is called when a file rename is detected.
 type RenameSaver func(oldPath, newPath string) (string, error)
 
 // saveJob represents a queued DB write operation.
 type saveJob struct {
-	filePath string
-	content  []byte
-	oldPath  string // rename only
-	newPath  string // rename only
-	rename   bool
+	filePath     string
+	content      []byte
+	maxSnapshots int    // per-WatchSet maxSnapshots
+	oldPath      string // rename only
+	newPath      string // rename only
+	rename       bool
 }
 
 // Config holds watcher configuration.
 type Config struct {
-	WatchDirs       []string
-	Extensions      []string
-	ExcludePatterns []string
-	DebounceSec     int
-	MaxFileSize     int64
+	WatchSets []config.WatchSet
+}
+
+// watchSetRuntime holds pre-computed runtime data for a WatchSet.
+type watchSetRuntime struct {
+	name            string
+	dirs            []string // normalized paths (with trailing separator)
+	extSet          map[string]struct{}
+	excludePatterns []string
+	debounceSec     int
+	maxFileSize     int64
+	maxSnapshots    int
 }
 
 // pendingRename tracks a Rename event waiting for a matching Create.
@@ -56,13 +65,12 @@ type pendingRename struct {
 // Watcher monitors directories for file changes and triggers snapshots.
 type Watcher struct {
 	fsWatcher      *fsnotify.Watcher
-	config         Config
+	watchSets      []watchSetRuntime
 	save           SnapshotSaver
 	saveBatch      SnapshotBatchSaver
 	saveRename     RenameSaver
 	timers         map[string]*time.Timer
 	mu             sync.Mutex
-	extSet         map[string]struct{}
 	OnSnapshot     func(filePath string)
 	OnRename       func(oldPath, newPath string)
 	pendingRenames map[string]pendingRename
@@ -80,31 +88,75 @@ func New(cfg Config, save SnapshotSaver) (*Watcher, error) {
 		return nil, fmt.Errorf("creating fsnotify watcher: %w", err)
 	}
 
-	extSet := make(map[string]struct{}, len(cfg.Extensions))
-	for _, ext := range cfg.Extensions {
-		extSet[ext] = struct{}{}
+	runtimes := make([]watchSetRuntime, len(cfg.WatchSets))
+	for i, ws := range cfg.WatchSets {
+		extSet := make(map[string]struct{}, len(ws.Extensions))
+		for _, ext := range ws.Extensions {
+			extSet[ext] = struct{}{}
+		}
+		normalizedDirs := make([]string, len(ws.Dirs))
+		for j, dir := range ws.Dirs {
+			if !strings.HasSuffix(dir, string(filepath.Separator)) {
+				normalizedDirs[j] = dir + string(filepath.Separator)
+			} else {
+				normalizedDirs[j] = dir
+			}
+		}
+		runtimes[i] = watchSetRuntime{
+			name:            ws.Name,
+			dirs:            normalizedDirs,
+			extSet:          extSet,
+			excludePatterns: ws.ExcludePatterns,
+			debounceSec:     ws.DebounceSec,
+			maxFileSize:     ws.MaxFileSize,
+			maxSnapshots:    ws.MaxSnapshots,
+		}
 	}
 
 	w := &Watcher{
 		fsWatcher:      fsw,
-		config:         cfg,
+		watchSets:      runtimes,
 		save:           save,
 		timers:         make(map[string]*time.Timer),
-		extSet:         extSet,
 		pendingRenames: make(map[string]pendingRename),
 		saveCh:         make(chan saveJob, saveQueueSize),
 		closeCh:        make(chan struct{}),
 		scanningDirs:   make(map[string]struct{}),
 	}
 
-	for _, dir := range cfg.WatchDirs {
-		if err := w.addDirRecursive(dir); err != nil {
-			fsw.Close()
-			return nil, fmt.Errorf("adding watch directory %q: %w", dir, err)
+	for _, ws := range cfg.WatchSets {
+		for _, dir := range ws.Dirs {
+			if err := w.addDirRecursive(dir); err != nil {
+				fsw.Close()
+				return nil, fmt.Errorf("adding watch directory %q: %w", dir, err)
+			}
 		}
 	}
 
 	return w, nil
+}
+
+// findWatchSet returns the WatchSet whose dir is a prefix of the given file path.
+// Uses longest-prefix match. Returns nil if no match is found.
+// Dirs in watchSetRuntime are normalized with trailing separator (e.g. "/home/user/projects/").
+// This also matches the exact directory path without the trailing separator.
+func (w *Watcher) findWatchSet(filePath string) *watchSetRuntime {
+	var best *watchSetRuntime
+	bestLen := 0
+	for i := range w.watchSets {
+		for _, dir := range w.watchSets[i].dirs {
+			// Match files/subdirs under this dir, or the dir itself
+			if strings.HasPrefix(filePath, dir) && len(dir) > bestLen {
+				best = &w.watchSets[i]
+				bestLen = len(dir)
+			} else if filePath+string(filepath.Separator) == dir && len(dir) > bestLen {
+				// Exact match for the root directory itself
+				best = &w.watchSets[i]
+				bestLen = len(dir)
+			}
+		}
+	}
+	return best
 }
 
 // SetRenameSaver sets the function to call when a rename is detected.
@@ -206,9 +258,11 @@ func (w *Watcher) processBatch(batch []saveJob) {
 func (w *Watcher) processSnapshotBatch(snapshots []saveJob) {
 	filePaths := make([]string, len(snapshots))
 	contents := make([][]byte, len(snapshots))
+	maxSnapshotsSlice := make([]int, len(snapshots))
 	for i, s := range snapshots {
 		filePaths[i] = s.filePath
 		contents[i] = s.content
+		maxSnapshotsSlice[i] = s.maxSnapshots
 	}
 
 	var savedSlice []bool
@@ -221,7 +275,7 @@ func (w *Watcher) processSnapshotBatch(snapshots []saveJob) {
 		errSlice = make([]error, len(snapshots))
 		for i := range snapshots {
 			for attempt := range saveRetryCount {
-				savedSlice[i], errSlice[i] = w.save(filePaths[i], contents[i])
+				savedSlice[i], errSlice[i] = w.save(filePaths[i], contents[i], maxSnapshotsSlice[i])
 				if errSlice[i] == nil {
 					break
 				}
@@ -235,7 +289,7 @@ func (w *Watcher) processSnapshotBatch(snapshots []saveJob) {
 		}
 	} else {
 		for attempt := range saveRetryCount {
-			savedSlice, errSlice = saver(filePaths, contents)
+			savedSlice, errSlice = saver(filePaths, contents, maxSnapshotsSlice)
 			if !w.hasDatabaseLockedError(errSlice) {
 				break
 			}
@@ -427,7 +481,11 @@ func (w *Watcher) scheduleSnapshotIfTrackable(filePath string) {
 }
 
 func (w *Watcher) scheduleSnapshot(filePath string) {
-	debounce := time.Duration(w.config.DebounceSec) * time.Second
+	ws := w.findWatchSet(filePath)
+	if ws == nil {
+		return
+	}
+	debounce := time.Duration(ws.debounceSec) * time.Second
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -449,13 +507,18 @@ func (w *Watcher) scheduleSnapshot(filePath string) {
 }
 
 func (w *Watcher) takeSnapshot(filePath string) {
+	ws := w.findWatchSet(filePath)
+	if ws == nil {
+		return
+	}
+
 	info, err := os.Stat(filePath)
 	if err != nil {
 		// File may have been deleted between event and snapshot
 		return
 	}
 
-	if info.Size() > w.config.MaxFileSize {
+	if info.Size() > ws.maxFileSize {
 		return
 	}
 
@@ -473,7 +536,7 @@ func (w *Watcher) takeSnapshot(filePath string) {
 		return
 	}
 
-	w.saveCh <- saveJob{filePath: filePath, content: content}
+	w.saveCh <- saveJob{filePath: filePath, content: content, maxSnapshots: ws.maxSnapshots}
 }
 
 func (w *Watcher) addDirRecursive(root string) error {

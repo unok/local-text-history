@@ -64,15 +64,14 @@ type Stats struct {
 
 // DB wraps a SQLite database connection for file history operations.
 type DB struct {
-	db           *sql.DB
-	encoder      *zstd.Encoder
-	decoder      *zstd.Decoder
-	maxSnapshots int
+	db      *sql.DB
+	encoder *zstd.Encoder
+	decoder *zstd.Decoder
 }
 
 // New opens a SQLite database at the given path, enables WAL mode and
 // foreign keys, creates the schema, and returns a DB instance.
-func New(dbPath string, maxSnapshots int) (*DB, error) {
+func New(dbPath string) (*DB, error) {
 	sqlDB, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
@@ -116,10 +115,9 @@ func New(dbPath string, maxSnapshots int) (*DB, error) {
 	}
 
 	return &DB{
-		db:           sqlDB,
-		encoder:      encoder,
-		decoder:      decoder,
-		maxSnapshots: maxSnapshots,
+		db:      sqlDB,
+		encoder: encoder,
+		decoder: decoder,
 	}, nil
 }
 
@@ -396,14 +394,15 @@ func newUUIDv7() string {
 
 // SaveSnapshot saves a file snapshot. It returns false if the content
 // hash matches the latest snapshot (duplicate skip).
-func (d *DB) SaveSnapshot(filePath string, content []byte) (bool, error) {
+// When maxSnapshots > 0, old snapshots beyond the limit are pruned.
+func (d *DB) SaveSnapshot(filePath string, content []byte, maxSnapshots int) (bool, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return false, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	saved, err := d.saveSnapshotInTx(tx, filePath, content)
+	saved, err := d.saveSnapshotInTx(tx, filePath, content, maxSnapshots)
 	if err != nil {
 		return false, err
 	}
@@ -415,9 +414,20 @@ func (d *DB) SaveSnapshot(filePath string, content []byte) (bool, error) {
 }
 
 // SaveSnapshotBatch saves multiple file snapshots in a single transaction.
+// maxSnapshots specifies the per-file snapshot limit for each item.
+// All three slices must have the same length.
 // Returns a saved flag and error for each input item.
-func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte) ([]bool, []error) {
+func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte, maxSnapshots []int) ([]bool, []error) {
 	n := len(filePaths)
+	if len(contents) != n || len(maxSnapshots) != n {
+		validationErr := fmt.Errorf("slice length mismatch: filePaths=%d, contents=%d, maxSnapshots=%d", n, len(contents), len(maxSnapshots))
+		saved := make([]bool, n)
+		errs := make([]error, n)
+		for i := range n {
+			errs[i] = validationErr
+		}
+		return saved, errs
+	}
 	saved := make([]bool, n)
 	errs := make([]error, n)
 
@@ -431,7 +441,7 @@ func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte) ([]bool, [
 	defer tx.Rollback()
 
 	for i := range n {
-		saved[i], errs[i] = d.saveSnapshotInTx(tx, filePaths[i], contents[i])
+		saved[i], errs[i] = d.saveSnapshotInTx(tx, filePaths[i], contents[i], maxSnapshots[i])
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -447,7 +457,8 @@ func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte) ([]bool, [
 }
 
 // saveSnapshotInTx performs the snapshot save logic within an existing transaction.
-func (d *DB) saveSnapshotInTx(tx *sql.Tx, filePath string, content []byte) (bool, error) {
+// When maxSnapshots > 0, old snapshots beyond the limit are pruned.
+func (d *DB) saveSnapshotInTx(tx *sql.Tx, filePath string, content []byte, maxSnapshots int) (bool, error) {
 	hash := sha256sum(content)
 
 	// Check if file already exists and get its ID + latest snapshot hash
@@ -501,12 +512,12 @@ func (d *DB) saveSnapshotInTx(tx *sql.Tx, filePath string, content []byte) (bool
 	}
 
 	// Enforce maxSnapshots limit
-	if d.maxSnapshots > 0 {
+	if maxSnapshots > 0 {
 		_, err = tx.Exec(
 			`DELETE FROM snapshots WHERE file_id = ? AND id NOT IN (
 				SELECT id FROM snapshots WHERE file_id = ? ORDER BY timestamp DESC LIMIT ?
 			)`,
-			fileID, fileID, d.maxSnapshots,
+			fileID, fileID, maxSnapshots,
 		)
 		if err != nil {
 			return false, fmt.Errorf("pruning old snapshots: %w", err)
@@ -517,13 +528,25 @@ func (d *DB) saveSnapshotInTx(tx *sql.Tx, filePath string, content []byte) (bool
 }
 
 // SearchFiles searches for files whose path contains the query string.
-func (d *DB) SearchFiles(query string, limit, offset int) ([]File, error) {
+// When dirPrefixes is non-empty, results are filtered to files under those directories.
+func (d *DB) SearchFiles(query string, limit, offset int, dirPrefixes []string) ([]File, error) {
+	where := "path LIKE '%' || ? || '%'"
+	args := []any{query}
+
+	dirFilter, dirArgs := buildDirFilter("path", dirPrefixes)
+	if dirFilter != "" {
+		where += " AND " + dirFilter
+		args = append(args, dirArgs...)
+	}
+
+	args = append(args, limit, offset)
+
 	rows, err := d.db.Query(
 		`SELECT id, path, created, updated FROM files
-		 WHERE path LIKE '%' || ? || '%'
+		 WHERE `+where+`
 		 ORDER BY updated DESC
 		 LIMIT ? OFFSET ?`,
-		query, limit, offset,
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("searching files: %w", err)
@@ -613,66 +636,118 @@ func (d *DB) DeleteFile(id string) error {
 }
 
 // GetStats returns aggregate statistics.
-func (d *DB) GetStats() (Stats, error) {
+// When dirPrefixes is non-empty, only files under those directories are counted.
+func (d *DB) GetStats(dirPrefixes []string) (Stats, error) {
 	var stats Stats
-	err := d.db.QueryRow(`SELECT COUNT(*) FROM files`).Scan(&stats.TotalFiles)
-	if err != nil {
-		return Stats{}, fmt.Errorf("counting files: %w", err)
+
+	dirFilter, dirArgs := buildDirFilter("path", dirPrefixes)
+
+	if dirFilter == "" {
+		// No filter: use simple queries (optimal for empty dirPrefixes)
+		err := d.db.QueryRow(`SELECT COUNT(*) FROM files`).Scan(&stats.TotalFiles)
+		if err != nil {
+			return Stats{}, fmt.Errorf("counting files: %w", err)
+		}
+		err = d.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(size), 0) FROM snapshots`).Scan(
+			&stats.TotalSnapshots, &stats.TotalSize,
+		)
+		if err != nil {
+			return Stats{}, fmt.Errorf("counting snapshots: %w", err)
+		}
+	} else {
+		// With dir filter: filter files by path prefix
+		err := d.db.QueryRow(
+			`SELECT COUNT(*) FROM files WHERE `+dirFilter, dirArgs...,
+		).Scan(&stats.TotalFiles)
+		if err != nil {
+			return Stats{}, fmt.Errorf("counting files: %w", err)
+		}
+		// Join through files to filter snapshots by dir prefix
+		snapFilter, snapArgs := buildDirFilter("f.path", dirPrefixes)
+		err = d.db.QueryRow(
+			`SELECT COUNT(*), COALESCE(SUM(s.size), 0) FROM snapshots s
+			 JOIN files f ON s.file_id = f.id
+			 WHERE `+snapFilter,
+			snapArgs...,
+		).Scan(&stats.TotalSnapshots, &stats.TotalSize)
+		if err != nil {
+			return Stats{}, fmt.Errorf("counting snapshots: %w", err)
+		}
 	}
-	err = d.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(size), 0) FROM snapshots`).Scan(
-		&stats.TotalSnapshots, &stats.TotalSize,
-	)
-	if err != nil {
-		return Stats{}, fmt.Errorf("counting snapshots: %w", err)
-	}
+
 	return stats, nil
 }
 
 // GetRecentSnapshots returns the most recent snapshots and renames across all files,
 // joined with their file path, ordered by timestamp descending.
 // When query is non-empty, results are filtered to entries whose file path contains the query string.
-func (d *DB) GetRecentSnapshots(limit, offset int, query string) ([]HistoryEntry, error) {
-	if query == "" {
-		return d.getRecentSnapshotsAll(limit, offset)
-	}
-	return d.getRecentSnapshotsFiltered(limit, offset, query)
-}
+// When dirPrefixes is non-empty, results are filtered to files under those directories.
+func (d *DB) GetRecentSnapshots(limit, offset int, query string, dirPrefixes []string) ([]HistoryEntry, error) {
+	// Build save sub-query
+	saveWhere := ""
+	var saveArgs []any
 
-func (d *DB) getRecentSnapshotsAll(limit, offset int) ([]HistoryEntry, error) {
-	rows, err := d.db.Query(
-		`SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
-			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
-			FROM snapshots s
-			JOIN files f ON s.file_id = f.id
-			UNION ALL
-			SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
-			FROM renames r
-		) ORDER BY timestamp DESC, entry_id DESC
-		LIMIT ? OFFSET ?`,
-		limit, offset,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("getting recent entries: %w", err)
+	if query != "" {
+		saveWhere = "f.path LIKE '%' || ? || '%' COLLATE NOCASE"
+		saveArgs = append(saveArgs, query)
 	}
-	defer rows.Close()
-	return scanHistoryEntries(rows)
-}
 
-func (d *DB) getRecentSnapshotsFiltered(limit, offset int, query string) ([]HistoryEntry, error) {
-	rows, err := d.db.Query(
-		`SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
-			SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
-			FROM snapshots s
-			JOIN files f ON s.file_id = f.id
-			WHERE f.path LIKE '%' || ? || '%' COLLATE NOCASE
-			UNION ALL
-			SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
-			FROM renames r
-			WHERE r.new_path LIKE '%' || ? || '%' COLLATE NOCASE OR r.old_path LIKE '%' || ? || '%' COLLATE NOCASE
-		) ORDER BY timestamp DESC, entry_id DESC
-		LIMIT ? OFFSET ?`,
-		query, query, query, limit, offset,
-	)
+	dirFilter, dirArgs := buildDirFilter("f.path", dirPrefixes)
+	if dirFilter != "" {
+		if saveWhere != "" {
+			saveWhere += " AND "
+		}
+		saveWhere += dirFilter
+		saveArgs = append(saveArgs, dirArgs...)
+	}
+
+	saveWhereClause := ""
+	if saveWhere != "" {
+		saveWhereClause = " WHERE " + saveWhere
+	}
+
+	// Build rename sub-query
+	renameWhere := ""
+	var renameArgs []any
+
+	if query != "" {
+		renameWhere = "(r.new_path LIKE '%' || ? || '%' COLLATE NOCASE OR r.old_path LIKE '%' || ? || '%' COLLATE NOCASE)"
+		renameArgs = append(renameArgs, query, query)
+	}
+
+	newPathFilter, newPathArgs := buildDirFilter("r.new_path", dirPrefixes)
+	oldPathFilter, oldPathArgs := buildDirFilter("r.old_path", dirPrefixes)
+	if newPathFilter != "" {
+		renameDirFilter := "(" + newPathFilter + " OR " + oldPathFilter + ")"
+		if renameWhere != "" {
+			renameWhere += " AND "
+		}
+		renameWhere += renameDirFilter
+		renameArgs = append(renameArgs, newPathArgs...)
+		renameArgs = append(renameArgs, oldPathArgs...)
+	}
+
+	renameWhereClause := ""
+	if renameWhere != "" {
+		renameWhereClause = " WHERE " + renameWhere
+	}
+
+	sql := `SELECT entry_id, entry_type, file_id, file_path, old_path, size, hash, timestamp FROM (
+		SELECT s.id AS entry_id, 'save' AS entry_type, s.file_id, f.path AS file_path, '' AS old_path, s.size, s.hash, s.timestamp
+		FROM snapshots s
+		JOIN files f ON s.file_id = f.id` + saveWhereClause + `
+		UNION ALL
+		SELECT r.id AS entry_id, 'rename' AS entry_type, r.new_file_id AS file_id, r.new_path AS file_path, r.old_path, 0 AS size, '' AS hash, r.timestamp
+		FROM renames r` + renameWhereClause + `
+	) ORDER BY timestamp DESC, entry_id DESC
+	LIMIT ? OFFSET ?`
+
+	var args []any
+	args = append(args, saveArgs...)
+	args = append(args, renameArgs...)
+	args = append(args, limit, offset)
+
+	rows, err := d.db.Query(sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("getting recent entries: %w", err)
 	}
@@ -820,6 +895,24 @@ func (d *DB) GetRenames(fileID string) ([]Rename, error) {
 		renames = append(renames, r)
 	}
 	return renames, rows.Err()
+}
+
+// buildDirFilter generates a SQL WHERE clause fragment for directory prefix filtering.
+// Returns empty string and nil args if prefixes is empty.
+func buildDirFilter(column string, prefixes []string) (string, []any) {
+	if len(prefixes) == 0 {
+		return "", nil
+	}
+	conditions := make([]string, len(prefixes))
+	args := make([]any, len(prefixes))
+	for i, p := range prefixes {
+		if !strings.HasSuffix(p, "/") {
+			p = p + "/"
+		}
+		conditions[i] = column + " LIKE ? || '%'"
+		args[i] = p
+	}
+	return "(" + strings.Join(conditions, " OR ") + ")", args
 }
 
 func sha256sum(data []byte) string {

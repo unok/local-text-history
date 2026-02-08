@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { databaseDownloadUrl, downloadSnapshotUrl } from "./api";
+import { databaseDownloadUrl, downloadSnapshotUrl, stripWatchDir } from "./api";
 
 // fetchJSON and deleteRequest are not exported, so we test them
 // indirectly through the module's behavior and test the exported utilities
@@ -18,6 +18,42 @@ describe("downloadSnapshotUrl", () => {
 describe("databaseDownloadUrl", () => {
 	it("returns the correct database download URL", () => {
 		expect(databaseDownloadUrl()).toBe("/api/database/download");
+	});
+});
+
+describe("stripWatchDir", () => {
+	it("strips a matching watch directory prefix", () => {
+		expect(stripWatchDir("/projects/src/main.go", ["/projects"])).toBe(
+			"src/main.go",
+		);
+	});
+
+	it("returns the original path when no directory matches", () => {
+		expect(stripWatchDir("/other/file.go", ["/projects"])).toBe(
+			"/other/file.go",
+		);
+	});
+
+	it("uses longest matching directory for nested dirs", () => {
+		const dirs = ["/a", "/a/b"];
+		expect(stripWatchDir("/a/b/file.go", dirs)).toBe("file.go");
+	});
+
+	it("uses longest match regardless of order", () => {
+		const dirs = ["/a/b", "/a"];
+		expect(stripWatchDir("/a/b/file.go", dirs)).toBe("file.go");
+	});
+
+	it("does not strip partial directory matches", () => {
+		expect(stripWatchDir("/projects-old/file.go", ["/projects"])).toBe(
+			"/projects-old/file.go",
+		);
+	});
+
+	it("handles empty dirs array", () => {
+		expect(stripWatchDir("/projects/file.go", [])).toBe(
+			"/projects/file.go",
+		);
 	});
 });
 

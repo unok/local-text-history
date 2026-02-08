@@ -41,7 +41,7 @@ func main() {
 		log.Fatalf("failed to create db directory: %v", err)
 	}
 
-	database, err := db.New(cfg.DBPath, cfg.MaxSnapshots)
+	database, err := db.New(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
@@ -57,13 +57,7 @@ func main() {
 	}
 
 	// Set up watcher
-	watchCfg := watcher.Config{
-		WatchDirs:       cfg.WatchDirs,
-		Extensions:      cfg.Extensions,
-		ExcludePatterns: cfg.ExcludePatterns,
-		DebounceSec:     cfg.DebounceSec,
-		MaxFileSize:     cfg.MaxFileSize,
-	}
+	watchCfg := watcher.Config{WatchSets: cfg.WatchSets}
 	w, err := watcher.New(watchCfg, database.SaveSnapshot)
 	if err != nil {
 		log.Fatalf("failed to create watcher: %v", err)
@@ -74,7 +68,7 @@ func main() {
 	w.SetBatchSaver(database.SaveSnapshotBatch)
 
 	// Set up HTTP server
-	srv := server.New(database, staticFS, cfg.WatchDirs, cfg.BasicAuth)
+	srv := server.New(database, staticFS, cfg.WatchSets, cfg.BasicAuth)
 
 	// Wire watcher snapshot notifications to SSE
 	w.OnSnapshot = func(filePath string) {
