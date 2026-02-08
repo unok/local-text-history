@@ -15,6 +15,9 @@ const listeners = new Set<() => void>()
 // Snapshot counter for useSyncExternalStore change detection
 let snapshotVersion = 0
 
+// Incremented only on resetAllTabStates, used by consumers to detect resets
+let resetVersion = 0
+
 function subscribe(listener: () => void) {
   listeners.add(listener)
   return () => {
@@ -48,6 +51,24 @@ function setTabState(name: string, state: Partial<TabState>): void {
   notifyListeners()
 }
 
+function resetAllTabStates(): void {
+  tabStates.clear()
+  resetVersion++
+  notifyListeners()
+}
+
+export const _testing = {
+  subscribe,
+  getSnapshot,
+  setActiveWatchSet,
+  getTabState,
+  setTabState,
+  resetAllTabStates,
+  getResetVersion: () => resetVersion,
+  getActiveWatchSet: () => activeWatchSet,
+  getTabStates: () => tabStates,
+}
+
 export function useWatchSetState() {
   useSyncExternalStore(subscribe, getSnapshot)
 
@@ -58,6 +79,8 @@ export function useWatchSetState() {
     activeWatchSet: current,
     setActiveWatchSet,
     tabState,
+    resetVersion,
+    resetAllTabStates,
     setQuery: (query: string) => {
       if (current !== null) {
         setTabState(current, { query, page: 0 })

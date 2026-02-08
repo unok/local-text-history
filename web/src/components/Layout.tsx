@@ -52,7 +52,7 @@ function MoonIcon() {
 export default function Layout({ children }: { children: ReactNode }) {
   const { data: stats, error } = useStats()
   const { theme, toggleTheme } = useTheme()
-  const { activeWatchSet, setActiveWatchSet } = useWatchSetState()
+  const { activeWatchSet, setActiveWatchSet, resetAllTabStates } = useWatchSetState()
 
   const watchSets = stats?.watchSets ?? []
   const showTabs = watchSets.length >= 2
@@ -67,6 +67,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               className="text-xl font-bold text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
               onClick={(e) => {
                 e.preventDefault()
+                resetAllTabStates()
                 navigate('/')
               }}
             >
