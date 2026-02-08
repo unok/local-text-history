@@ -399,6 +399,59 @@ func TestLoad_WatchSetsFormat(t *testing.T) {
 	}
 }
 
+func TestLoad_WatchSetsClearsLegacyFields(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	cfgData := map[string]any{
+		"extensions":      []string{".legacy"},
+		"excludePatterns": []string{"**/legacy/**"},
+		"debounceSec":     99,
+		"maxFileSize":     999,
+		"maxSnapshots":    888,
+		"watchSets": []map[string]any{
+			{
+				"name":       "SetA",
+				"dirs":       []string{watchDir},
+				"extensions": []string{".go"},
+			},
+		},
+		"dbPath": filepath.Join(dir, "history.db"),
+	}
+	data, err := json.Marshal(cfgData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Extensions != nil {
+		t.Errorf("Extensions should be nil after watchSets normalization, got %v", cfg.Extensions)
+	}
+	if cfg.ExcludePatterns != nil {
+		t.Errorf("ExcludePatterns should be nil after watchSets normalization, got %v", cfg.ExcludePatterns)
+	}
+	if cfg.DebounceSec != 0 {
+		t.Errorf("DebounceSec should be 0 after watchSets normalization, got %d", cfg.DebounceSec)
+	}
+	if cfg.MaxFileSize != 0 {
+		t.Errorf("MaxFileSize should be 0 after watchSets normalization, got %d", cfg.MaxFileSize)
+	}
+	if cfg.MaxSnapshots != 0 {
+		t.Errorf("MaxSnapshots should be 0 after watchSets normalization, got %d", cfg.MaxSnapshots)
+	}
+}
+
 func TestLoad_WatchSetsIgnoresLegacyFields(t *testing.T) {
 	dir := t.TempDir()
 	watchDir := filepath.Join(dir, "watch")

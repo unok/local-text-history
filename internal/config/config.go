@@ -105,6 +105,12 @@ func normalizeWatchSets(cfg *Config) {
 			applyWatchSetDefaults(&cfg.WatchSets[i])
 		}
 		cfg.WatchDirs = cfg.AllWatchDirs()
+
+		cfg.Extensions = nil
+		cfg.ExcludePatterns = nil
+		cfg.DebounceSec = 0
+		cfg.MaxFileSize = 0
+		cfg.MaxSnapshots = 0
 		return
 	}
 

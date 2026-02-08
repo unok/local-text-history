@@ -16,7 +16,7 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
   const { data: stats } = useStats()
 
   // When multiple watch sets exist, use tab state; otherwise fall back to local state
-  const hasWatchSets = activeWatchSet !== null
+  const hasWatchSets = (stats?.watchSets?.length ?? 0) >= 2
   const [localPage, setLocalPage] = useState(0)
   const [localQuery, setLocalQuery] = useState(initialQuery)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)

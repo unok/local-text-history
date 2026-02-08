@@ -415,9 +415,19 @@ func (d *DB) SaveSnapshot(filePath string, content []byte, maxSnapshots int) (bo
 
 // SaveSnapshotBatch saves multiple file snapshots in a single transaction.
 // maxSnapshots specifies the per-file snapshot limit for each item.
+// All three slices must have the same length.
 // Returns a saved flag and error for each input item.
 func (d *DB) SaveSnapshotBatch(filePaths []string, contents [][]byte, maxSnapshots []int) ([]bool, []error) {
 	n := len(filePaths)
+	if len(contents) != n || len(maxSnapshots) != n {
+		validationErr := fmt.Errorf("slice length mismatch: filePaths=%d, contents=%d, maxSnapshots=%d", n, len(contents), len(maxSnapshots))
+		saved := make([]bool, n)
+		errs := make([]error, n)
+		for i := range n {
+			errs[i] = validationErr
+		}
+		return saved, errs
+	}
 	saved := make([]bool, n)
 	errs := make([]error, n)
 
@@ -705,13 +715,16 @@ func (d *DB) GetRecentSnapshots(limit, offset int, query string, dirPrefixes []s
 		renameArgs = append(renameArgs, query, query)
 	}
 
-	renameDirFilter, renameDirArgs := buildDirFilter("r.new_path", dirPrefixes)
-	if renameDirFilter != "" {
+	newPathFilter, newPathArgs := buildDirFilter("r.new_path", dirPrefixes)
+	oldPathFilter, oldPathArgs := buildDirFilter("r.old_path", dirPrefixes)
+	if newPathFilter != "" {
+		renameDirFilter := "(" + newPathFilter + " OR " + oldPathFilter + ")"
 		if renameWhere != "" {
 			renameWhere += " AND "
 		}
 		renameWhere += renameDirFilter
-		renameArgs = append(renameArgs, renameDirArgs...)
+		renameArgs = append(renameArgs, newPathArgs...)
+		renameArgs = append(renameArgs, oldPathArgs...)
 	}
 
 	renameWhereClause := ""

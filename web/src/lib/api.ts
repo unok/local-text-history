@@ -184,17 +184,25 @@ export function databaseDownloadUrl(): string {
   return '/api/database/download'
 }
 
+export function stripWatchDir(filePath: string, dirs: string[]): string {
+  let bestMatch = ''
+  for (const dir of dirs) {
+    if (filePath.startsWith(dir + '/') && dir.length > bestMatch.length) {
+      bestMatch = dir
+    }
+  }
+  if (bestMatch) {
+    return filePath.slice(bestMatch.length + 1)
+  }
+  return filePath
+}
+
 export function useStripWatchDir(activeWatchSetDirs?: string[]): (filePath: string) => string {
   const { data: stats } = useStats()
   return useCallback(
     (filePath: string): string => {
       const dirs = activeWatchSetDirs ?? stats?.watchDirs ?? []
-      for (const dir of dirs) {
-        if (filePath.startsWith(dir + '/')) {
-          return filePath.slice(dir.length + 1)
-        }
-      }
-      return filePath
+      return stripWatchDir(filePath, dirs)
     },
     [activeWatchSetDirs, stats],
   )

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -695,6 +696,39 @@ func TestGetRecentSnapshots_DirPrefixesWithRenames(t *testing.T) {
 	}
 }
 
+func TestGetRecentSnapshots_DirPrefixesWithCrossDirectoryRename(t *testing.T) {
+	d := newTestDB(t)
+
+	// Create a file in /projects and rename it to /archive (cross-directory)
+	if _, err := d.SaveSnapshot("/projects/old.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveRename("/projects/old.go", "/archive/old.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by /projects: should include save + rename (old_path is in /projects)
+	entries, err := d.GetRecentSnapshots(50, 0, "", []string{"/projects"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (1 save + 1 rename with old_path in /projects)", len(entries))
+	}
+
+	// Filter by /archive: should include rename (new_path is in /archive)
+	entries, err = d.GetRecentSnapshots(50, 0, "", []string{"/archive"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (rename with new_path in /archive)", len(entries))
+	}
+	if entries[0].EntryType != "rename" {
+		t.Errorf("EntryType = %s, want rename", entries[0].EntryType)
+	}
+}
+
 func TestUUIDv7_Generation(t *testing.T) {
 	d := newTestDB(t)
 
@@ -1287,6 +1321,53 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 	if stats.TotalFiles != 1 {
 		t.Errorf("TotalFiles = %d, want 1", stats.TotalFiles)
+	}
+}
+
+func TestSaveSnapshotBatch_SliceLengthMismatch(t *testing.T) {
+	d := newTestDB(t)
+
+	// contents shorter than filePaths
+	saved, errs := d.SaveSnapshotBatch(
+		[]string{"/tmp/a.go", "/tmp/b.go"},
+		[][]byte{[]byte("aaa")},
+		[]int{0, 0},
+	)
+	if len(saved) != 2 {
+		t.Fatalf("saved length = %d, want 2", len(saved))
+	}
+	if len(errs) != 2 {
+		t.Fatalf("errs length = %d, want 2", len(errs))
+	}
+	for i, err := range errs {
+		if err == nil {
+			t.Errorf("errs[%d] should be non-nil", i)
+		} else if !strings.Contains(err.Error(), "slice length mismatch") {
+			t.Errorf("errs[%d] = %v, want slice length mismatch error", i, err)
+		}
+	}
+	for i, s := range saved {
+		if s {
+			t.Errorf("saved[%d] = true, want false", i)
+		}
+	}
+
+	// maxSnapshots shorter than filePaths
+	saved, errs = d.SaveSnapshotBatch(
+		[]string{"/tmp/a.go", "/tmp/b.go"},
+		[][]byte{[]byte("aaa"), []byte("bbb")},
+		[]int{0},
+	)
+	if len(saved) != 2 {
+		t.Fatalf("saved length = %d, want 2", len(saved))
+	}
+	if len(errs) != 2 {
+		t.Fatalf("errs length = %d, want 2", len(errs))
+	}
+	for i, err := range errs {
+		if err == nil {
+			t.Errorf("errs[%d] should be non-nil", i)
+		}
 	}
 }
 
