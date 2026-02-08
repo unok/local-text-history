@@ -1,6 +1,6 @@
 .PHONY: build clean dev test \
 	build-release-linux-amd64 build-release-linux-arm64 \
-	build-release-darwin-amd64 build-release-darwin-arm64
+	build-release-darwin-arm64
 
 LDFLAGS := -s -w
 
@@ -31,11 +31,6 @@ build-release-linux-arm64:
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
 		go build -ldflags '$(LDFLAGS) -extldflags "-static"' \
 		-o bin/file-history-linux-arm64 ./cmd/file-history
-
-build-release-darwin-amd64:
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		go build -ldflags '$(LDFLAGS)' \
-		-o bin/file-history-darwin-amd64 ./cmd/file-history
 
 build-release-darwin-arm64:
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \

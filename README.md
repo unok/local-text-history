@@ -20,7 +20,6 @@ JetBrains Local History 相当のファイル履歴追跡ツール。指定デ�
 |------|---------------|------|
 | Linux | x86_64 (amd64) | :white_check_mark: |
 | Linux | aarch64 (arm64) | :white_check_mark: |
-| macOS | Intel (amd64) | :white_check_mark: |
 | macOS | Apple Silicon (arm64) | :white_check_mark: |
 | Windows | - | :x: 非対応 |
 
