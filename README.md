@@ -32,9 +32,20 @@ Windows はファイルシステム関連の実装が Linux/macOS 固有の API 
 [GitHub Releases](../../releases) から対応プラットフォームのアーカイブをダウンロードしてください。
 
 ```bash
-# 例: Linux x86_64
+# 最新バージョンをダウンロード（Linux x86_64）
 curl -LO https://github.com/unok/local-text-history/releases/latest/download/file-history-linux-amd64.tar.gz
 tar xzf file-history-linux-amd64.tar.gz
+chmod +x file-history
+sudo mv file-history /usr/local/bin/
+```
+
+特定バージョンをダウンロードする場合は、バージョン付きファイル名を指定してください。
+
+```bash
+# 例: v0.1.0 を指定してダウンロード
+VERSION=v0.1.0
+curl -LO "https://github.com/unok/local-text-history/releases/download/${VERSION}/file-history-${VERSION}-linux-amd64.tar.gz"
+tar xzf "file-history-${VERSION}-linux-amd64.tar.gz"
 chmod +x file-history
 sudo mv file-history /usr/local/bin/
 ```
