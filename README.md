@@ -14,7 +14,36 @@ JetBrains Local History 相当のファイル履歴追跡ツール。指定デ�
 - **Basic 認証**: オプションで HTTP Basic 認証を有効化
 - **単一バイナリ**: Go embed で React SPA を同梱。デプロイはバイナリ1つのみ
 
-## 必要環境
+## 対応プラットフォーム
+
+| OS | アーキテクチャ | 対応 |
+|------|---------------|------|
+| Linux | x86_64 (amd64) | :white_check_mark: |
+| Linux | aarch64 (arm64) | :white_check_mark: |
+| macOS | Apple Silicon (arm64) | :white_check_mark: |
+| Windows | - | :x: 非対応 |
+
+Windows はファイルシステム関連の実装が Linux/macOS 固有の API に依存しているため非対応です。
+
+## インストール
+
+### ビルド済みバイナリ（推奨）
+
+[GitHub Releases](../../releases) から対応プラットフォームのアーカイブをダウンロードしてください。
+
+```bash
+# 例: Linux x86_64
+curl -LO https://github.com/unok/local-text-history/releases/latest/download/file-history-linux-amd64.tar.gz
+tar xzf file-history-linux-amd64.tar.gz
+chmod +x file-history
+sudo mv file-history /usr/local/bin/
+```
+
+バイナリは静的リンク（Linux）されており、他のライブラリのインストールは不要です。
+
+### ソースからビルド
+
+必要環境:
 
 - Go 1.25+（CGO 有効）
 - Node.js 20+
@@ -137,6 +166,10 @@ cd web && npm test # Web テスト
 
 - 内部構造: [ARCHITECTURE.md](ARCHITECTURE.md)
 - API リファレンス: [docs/API.md](docs/API.md)
+
+## 免責事項
+
+本ソフトウェアは「現状のまま（AS IS）」で提供され、明示または黙示を問わず、いかなる保証もありません。本ソフトウェアの使用は利用者自身の責任において行ってください。詳細は [MIT License](LICENSE) をご参照ください。
 
 ## ライセンス
 
