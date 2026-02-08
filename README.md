@@ -46,6 +46,8 @@ sudo mv file-history /usr/local/bin/
 VERSION=v0.1.0
 curl -LO "https://github.com/unok/local-text-history/releases/download/${VERSION}/file-history-${VERSION}-linux-amd64.tar.gz"
 tar xzf "file-history-${VERSION}-linux-amd64.tar.gz"
+chmod +x file-history
+sudo mv file-history /usr/local/bin/
 ```
 
 バイナリは静的リンク（Linux）されており、他のライブラリのインストールは不要です。
