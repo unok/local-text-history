@@ -19,7 +19,7 @@ import (
 func newTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
+	database, err := db.New(dbPath)
 	if err != nil {
 		t.Fatalf("db.New() error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestSearchFiles_Empty(t *testing.T) {
 func TestSearchFiles_WithResults(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/test.go", []byte("package main")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/test.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,10 +79,10 @@ func TestSearchFiles_WithResults(t *testing.T) {
 func TestGetFile(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/get.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/get.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("get.go", 1, 0)
+	files, _ := database.SearchFiles("get.go", 1, 0, nil)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s", files[0].ID), nil)
 	w := httptest.NewRecorder()
@@ -128,13 +128,13 @@ func TestGetFile_InvalidID(t *testing.T) {
 func TestGetSnapshots(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/snap.go", []byte("v1")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/snap.go", []byte("v1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/snap.go", []byte("v2")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/snap.go", []byte("v2"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("snap.go", 1, 0)
+	files, _ := database.SearchFiles("snap.go", 1, 0, nil)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s/snapshots", files[0].ID), nil)
 	w := httptest.NewRecorder()
@@ -156,10 +156,10 @@ func TestGetSnapshots(t *testing.T) {
 func TestGetSnapshot_WithContent(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/content.go", []byte("package main")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/content.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("content.go", 1, 0)
+	files, _ := database.SearchFiles("content.go", 1, 0, nil)
 	snapshots, _ := database.GetSnapshots(files[0].ID)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/snapshots/%s", snapshots[0].ID), nil)
@@ -196,10 +196,10 @@ func TestGetSnapshot_NotFound(t *testing.T) {
 func TestDownloadSnapshot(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/download.go", []byte("package main")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/download.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("download.go", 1, 0)
+	files, _ := database.SearchFiles("download.go", 1, 0, nil)
 	snapshots, _ := database.GetSnapshots(files[0].ID)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/snapshots/%s/download", snapshots[0].ID), nil)
@@ -223,13 +223,13 @@ func TestDownloadSnapshot(t *testing.T) {
 func TestDiff(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/diff.go", []byte("line1\nline2\n")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/diff.go", []byte("line1\nline2\n"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/diff.go", []byte("line1\nmodified\n")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/diff.go", []byte("line1\nmodified\n"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("diff.go", 1, 0)
+	files, _ := database.SearchFiles("diff.go", 1, 0, nil)
 	snapshots, _ := database.GetSnapshots(files[0].ID)
 
 	// snapshots are newest first
@@ -272,10 +272,10 @@ func TestDiff_MissingTo(t *testing.T) {
 func TestDiff_InitialSnapshot(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/initial.go", []byte("package main\n")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/initial.go", []byte("package main\n"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("initial.go", 1, 0)
+	files, _ := database.SearchFiles("initial.go", 1, 0, nil)
 	snapshots, _ := database.GetSnapshots(files[0].ID)
 
 	// Only 'to' parameter, no 'from' — should compare against empty content
@@ -312,40 +312,9 @@ func TestDiff_InitialSnapshot(t *testing.T) {
 func TestStats(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/stats.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/stats.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-
-	req := httptest.NewRequest("GET", "/api/stats", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var stats db.Stats
-	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
-		t.Fatal(err)
-	}
-	if stats.TotalFiles != 1 {
-		t.Errorf("TotalFiles = %d, want 1", stats.TotalFiles)
-	}
-	if stats.TotalSnapshots != 1 {
-		t.Errorf("TotalSnapshots = %d, want 1", stats.TotalSnapshots)
-	}
-}
-
-func TestStats_IncludesWatchDirs(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
-	if err != nil {
-		t.Fatalf("db.New() error: %v", err)
-	}
-	t.Cleanup(func() { database.Close() })
-
-	watchDirs := []string{"/home/user/projects", "/home/user/docs"}
-	srv := New(database, nil, watchDirs, nil)
 
 	req := httptest.NewRequest("GET", "/api/stats", nil)
 	w := httptest.NewRecorder()
@@ -356,14 +325,54 @@ func TestStats_IncludesWatchDirs(t *testing.T) {
 	}
 
 	var result struct {
-		TotalFiles     int      `json:"totalFiles"`
-		TotalSnapshots int      `json:"totalSnapshots"`
-		TotalSize      int64    `json:"totalSize"`
-		WatchDirs      []string `json:"watchDirs"`
+		TotalFiles     int            `json:"totalFiles"`
+		TotalSnapshots int            `json:"totalSnapshots"`
+		WatchSets      []watchSetInfo `json:"watchSets"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
+	if result.TotalFiles != 1 {
+		t.Errorf("TotalFiles = %d, want 1", result.TotalFiles)
+	}
+	if result.TotalSnapshots != 1 {
+		t.Errorf("TotalSnapshots = %d, want 1", result.TotalSnapshots)
+	}
+}
+
+func TestStats_IncludesWatchSets(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	watchSets := []config.WatchSet{
+		{Name: "Projects", Dirs: []string{"/home/user/projects"}},
+		{Name: "Docs", Dirs: []string{"/home/user/docs"}},
+	}
+	srv := New(database, nil, watchSets, nil)
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result struct {
+		TotalFiles     int            `json:"totalFiles"`
+		TotalSnapshots int            `json:"totalSnapshots"`
+		TotalSize      int64          `json:"totalSize"`
+		WatchDirs      []string       `json:"watchDirs"`
+		WatchSets      []watchSetInfo `json:"watchSets"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	// Check watchDirs (backward compatible)
 	if len(result.WatchDirs) != 2 {
 		t.Fatalf("got %d watchDirs, want 2", len(result.WatchDirs))
 	}
@@ -373,15 +382,25 @@ func TestStats_IncludesWatchDirs(t *testing.T) {
 	if result.WatchDirs[1] != "/home/user/docs" {
 		t.Errorf("watchDirs[1] = %s, want /home/user/docs", result.WatchDirs[1])
 	}
+	// Check watchSets
+	if len(result.WatchSets) != 2 {
+		t.Fatalf("got %d watchSets, want 2", len(result.WatchSets))
+	}
+	if result.WatchSets[0].Name != "Projects" {
+		t.Errorf("watchSets[0].Name = %s, want Projects", result.WatchSets[0].Name)
+	}
+	if result.WatchSets[1].Name != "Docs" {
+		t.Errorf("watchSets[1].Name = %s, want Docs", result.WatchSets[1].Name)
+	}
 }
 
 func TestDeleteFile(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/delete.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/delete.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("delete.go", 1, 0)
+	files, _ := database.SearchFiles("delete.go", 1, 0, nil)
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/files/%s", files[0].ID), nil)
 	w := httptest.NewRecorder()
@@ -427,7 +446,7 @@ func TestSearchFiles_Pagination(t *testing.T) {
 
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/page%d.go", i)
-		if _, err := database.SaveSnapshot(path, []byte("content")); err != nil {
+		if _, err := database.SaveSnapshot(path, []byte("content"), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -474,10 +493,10 @@ func TestHandleHistory_Empty(t *testing.T) {
 func TestHandleHistory_WithData(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/hist1.go", []byte("content1")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/hist1.go", []byte("content1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/hist2.go", []byte("content2")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/hist2.go", []byte("content2"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -517,7 +536,7 @@ func TestHandleHistory_CustomLimit(t *testing.T) {
 
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/hlimit%d.go", i)
-		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i))); err != nil {
+		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i)), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -550,7 +569,7 @@ func TestHandleHistory_Pagination(t *testing.T) {
 
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/hpage%d.go", i)
-		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i))); err != nil {
+		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i)), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -597,7 +616,7 @@ func TestHandleHistory_Pagination(t *testing.T) {
 func TestHandleHistory_IncludesRenames(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/hren1.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/hren1.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.SaveRename("/tmp/hren1.go", "/tmp/hren2.go"); err != nil {
@@ -641,10 +660,10 @@ func TestHandleHistory_IncludesRenames(t *testing.T) {
 func TestGetRenames_Empty(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/norename.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/norename.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, _ := database.SearchFiles("norename.go", 1, 0)
+	files, _ := database.SearchFiles("norename.go", 1, 0, nil)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s/renames", files[0].ID), nil)
 	w := httptest.NewRecorder()
@@ -666,7 +685,7 @@ func TestGetRenames_Empty(t *testing.T) {
 func TestGetRenames_WithData(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/renold.go", []byte("content")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/renold.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -675,7 +694,7 @@ func TestGetRenames_WithData(t *testing.T) {
 		t.Fatalf("SaveRename() error: %v", err)
 	}
 
-	files, _ := database.SearchFiles("renold.go", 1, 0)
+	files, _ := database.SearchFiles("renold.go", 1, 0, nil)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/files/%s/renames", files[0].ID), nil)
 	w := httptest.NewRecorder()
@@ -715,7 +734,7 @@ func TestGetRenames_InvalidID(t *testing.T) {
 func TestDatabaseDownload(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/dbdl.go", []byte("package main")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/dbdl.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -844,7 +863,7 @@ func TestHandleSSE_ReceivesNotification(t *testing.T) {
 
 func TestBasicAuth_RejectsWithoutCredentials(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
+	database, err := db.New(dbPath)
 	if err != nil {
 		t.Fatalf("db.New() error: %v", err)
 	}
@@ -867,7 +886,7 @@ func TestBasicAuth_RejectsWithoutCredentials(t *testing.T) {
 
 func TestBasicAuth_RejectsWrongCredentials(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
+	database, err := db.New(dbPath)
 	if err != nil {
 		t.Fatalf("db.New() error: %v", err)
 	}
@@ -888,7 +907,7 @@ func TestBasicAuth_RejectsWrongCredentials(t *testing.T) {
 
 func TestBasicAuth_AcceptsValidCredentials(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
+	database, err := db.New(dbPath)
 	if err != nil {
 		t.Fatalf("db.New() error: %v", err)
 	}
@@ -910,13 +929,13 @@ func TestBasicAuth_AcceptsValidCredentials(t *testing.T) {
 func TestHandleHistory_QueryFilter(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/project/src/main.go", []byte("package main")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/project/src/main.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/project/src/util.go", []byte("package util")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/project/src/util.go", []byte("package util"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -946,12 +965,12 @@ func TestHandleHistory_QueryFilterWithPagination(t *testing.T) {
 
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/srv_qp%d.go", i)
-		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i))); err != nil {
+		if _, err := database.SaveSnapshot(path, []byte(fmt.Sprintf("content%d", i)), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Non-matching entry
-	if _, err := database.SaveSnapshot("/tmp/other.go", []byte("other")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/other.go", []byte("other"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1005,10 +1024,10 @@ func TestHandleHistory_QueryFilterWithPagination(t *testing.T) {
 func TestHandleHistory_EmptyQueryReturnsAll(t *testing.T) {
 	srv, database := newTestServer(t)
 
-	if _, err := database.SaveSnapshot("/tmp/eqr1.go", []byte("c1")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/eqr1.go", []byte("c1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.SaveSnapshot("/tmp/eqr2.go", []byte("c2")); err != nil {
+	if _, err := database.SaveSnapshot("/tmp/eqr2.go", []byte("c2"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1035,7 +1054,7 @@ func TestHandleHistory_EmptyQueryReturnsAll(t *testing.T) {
 
 func TestBasicAuth_NilConfigSkipsAuth(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	database, err := db.New(dbPath, 0)
+	database, err := db.New(dbPath)
 	if err != nil {
 		t.Fatalf("db.New() error: %v", err)
 	}
@@ -1049,5 +1068,154 @@ func TestBasicAuth_NilConfigSkipsAuth(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// Tests for WatchSet filtering in API
+
+func TestHandleHistory_WatchSetFilter(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	watchSets := []config.WatchSet{
+		{Name: "project-a", Dirs: []string{"/home/user/project-a"}},
+		{Name: "project-b", Dirs: []string{"/home/user/project-b"}},
+	}
+	srv := New(database, nil, watchSets, nil)
+
+	// Save snapshots in different dirs
+	if _, err := database.SaveSnapshot("/home/user/project-a/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/home/user/project-b/main.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by project-a
+	req := httptest.NewRequest("GET", "/api/history?watchSet=project-a", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(result.Entries))
+	}
+	if result.Entries[0].FilePath != "/home/user/project-a/main.go" {
+		t.Errorf("filePath = %s, want /home/user/project-a/main.go", result.Entries[0].FilePath)
+	}
+}
+
+func TestHandleHistory_UnknownWatchSetReturnsAll(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	watchSets := []config.WatchSet{
+		{Name: "project-a", Dirs: []string{"/home/user/project-a"}},
+	}
+	srv := New(database, nil, watchSets, nil)
+
+	if _, err := database.SaveSnapshot("/home/user/project-a/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/home/user/other/main.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unknown watchSet name should return all entries (no filter)
+	req := httptest.NewRequest("GET", "/api/history?watchSet=unknown", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var result struct {
+		Entries []db.HistoryEntry `json:"entries"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 2 {
+		t.Errorf("got %d entries, want 2 (unknown watchSet = no filter)", len(result.Entries))
+	}
+}
+
+func TestSearchFiles_WatchSetFilter(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	database, err := db.New(dbPath)
+	if err != nil {
+		t.Fatalf("db.New() error: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	watchSets := []config.WatchSet{
+		{Name: "project-a", Dirs: []string{"/home/user/project-a"}},
+		{Name: "project-b", Dirs: []string{"/home/user/project-b"}},
+	}
+	srv := New(database, nil, watchSets, nil)
+
+	if _, err := database.SaveSnapshot("/home/user/project-a/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SaveSnapshot("/home/user/project-b/app.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by project-b
+	req := httptest.NewRequest("GET", "/api/files?q=&watchSet=project-b", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var files []db.File
+	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Path != "/home/user/project-b/app.go" {
+		t.Errorf("path = %s, want /home/user/project-b/app.go", files[0].Path)
+	}
+}
+
+func TestResolveDirPrefixes(t *testing.T) {
+	watchSets := []config.WatchSet{
+		{Name: "proj-a", Dirs: []string{"/a", "/b"}},
+		{Name: "proj-b", Dirs: []string{"/c"}},
+	}
+	srv := New(nil, nil, watchSets, nil)
+
+	// Empty name returns nil
+	if got := srv.resolveDirPrefixes(""); got != nil {
+		t.Errorf("resolveDirPrefixes(\"\") = %v, want nil", got)
+	}
+
+	// Known name returns dirs
+	got := srv.resolveDirPrefixes("proj-a")
+	if len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+		t.Errorf("resolveDirPrefixes(\"proj-a\") = %v, want [/a /b]", got)
+	}
+
+	// Unknown name returns nil
+	if got := srv.resolveDirPrefixes("unknown"); got != nil {
+		t.Errorf("resolveDirPrefixes(\"unknown\") = %v, want nil", got)
 	}
 }

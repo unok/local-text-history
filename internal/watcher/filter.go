@@ -9,21 +9,35 @@ import (
 )
 
 // shouldTrack returns true if the file should be tracked based on
-// extension and exclude pattern filters.
+// its WatchSet membership, extension, and exclude pattern filters.
 func (w *Watcher) shouldTrack(filePath string) bool {
-	// When extensions are configured, check the file extension
-	if len(w.extSet) > 0 {
+	ws := w.findWatchSet(filePath)
+	if ws == nil {
+		return false
+	}
+	if len(ws.extSet) > 0 {
 		ext := filepath.Ext(filePath)
-		if _, ok := w.extSet[ext]; !ok {
+		if _, ok := ws.extSet[ext]; !ok {
 			return false
 		}
 	}
-	return !w.isExcluded(filePath)
+	return !w.isExcludedBy(filePath, ws.excludePatterns)
 }
 
-// isExcluded returns true if the path matches any exclude pattern.
-func (w *Watcher) isExcluded(filePath string) bool {
-	for _, pattern := range w.config.ExcludePatterns {
+// isExcluded checks if a path matches any exclude pattern of its owning WatchSet.
+// Used for directory-level exclusion during recursive watch registration.
+// Paths that do not belong to any WatchSet are considered excluded.
+func (w *Watcher) isExcluded(dirPath string) bool {
+	ws := w.findWatchSet(dirPath)
+	if ws == nil {
+		return true
+	}
+	return w.isExcludedBy(dirPath, ws.excludePatterns)
+}
+
+// isExcludedBy returns true if the path matches any of the given exclude patterns.
+func (w *Watcher) isExcludedBy(filePath string, patterns []string) bool {
+	for _, pattern := range patterns {
 		matched, err := doublestar.PathMatch(pattern, filePath)
 		if err != nil {
 			continue

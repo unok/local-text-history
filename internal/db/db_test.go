@@ -11,10 +11,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func newTestDB(t *testing.T, maxSnapshots int) *DB {
+func newTestDB(t *testing.T) *DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	d, err := New(dbPath, maxSnapshots)
+	d, err := New(dbPath)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
@@ -23,9 +23,9 @@ func newTestDB(t *testing.T, maxSnapshots int) *DB {
 }
 
 func TestSaveSnapshot_Basic(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	saved, err := d.SaveSnapshot("/tmp/test.go", []byte("package main"))
+	saved, err := d.SaveSnapshot("/tmp/test.go", []byte("package main"), 0)
 	if err != nil {
 		t.Fatalf("SaveSnapshot() error: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestSaveSnapshot_Basic(t *testing.T) {
 		t.Error("SaveSnapshot() = false, want true")
 	}
 
-	files, err := d.SearchFiles("test.go", 10, 0)
+	files, err := d.SearchFiles("test.go", 10, 0, nil)
 	if err != nil {
 		t.Fatalf("SearchFiles() error: %v", err)
 	}
@@ -46,10 +46,10 @@ func TestSaveSnapshot_Basic(t *testing.T) {
 }
 
 func TestSaveSnapshot_DuplicateSkip(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 	content := []byte("package main")
 
-	saved, err := d.SaveSnapshot("/tmp/test.go", content)
+	saved, err := d.SaveSnapshot("/tmp/test.go", content, 0)
 	if err != nil {
 		t.Fatalf("first SaveSnapshot() error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSaveSnapshot_DuplicateSkip(t *testing.T) {
 		t.Error("first SaveSnapshot() = false, want true")
 	}
 
-	saved, err = d.SaveSnapshot("/tmp/test.go", content)
+	saved, err = d.SaveSnapshot("/tmp/test.go", content, 0)
 	if err != nil {
 		t.Fatalf("second SaveSnapshot() error: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestSaveSnapshot_DuplicateSkip(t *testing.T) {
 		t.Error("second SaveSnapshot() = true, want false (duplicate)")
 	}
 
-	files, err := d.SearchFiles("test.go", 10, 0)
+	files, err := d.SearchFiles("test.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,16 +79,16 @@ func TestSaveSnapshot_DuplicateSkip(t *testing.T) {
 }
 
 func TestSaveSnapshot_DifferentContent(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/test.go", []byte("v1")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/test.go", []byte("v1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/test.go", []byte("v2")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/test.go", []byte("v2"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("test.go", 10, 0)
+	files, err := d.SearchFiles("test.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,14 +102,14 @@ func TestSaveSnapshot_DifferentContent(t *testing.T) {
 }
 
 func TestZstdRoundTrip(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 	original := []byte("Hello, zstd compression test content!")
 
-	if _, err := d.SaveSnapshot("/tmp/zstd.txt", original); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/zstd.txt", original, 0); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("zstd.txt", 10, 0)
+	files, err := d.SearchFiles("zstd.txt", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,16 +131,16 @@ func TestZstdRoundTrip(t *testing.T) {
 }
 
 func TestMaxSnapshots(t *testing.T) {
-	d := newTestDB(t, 3)
+	d := newTestDB(t)
 
 	for i := range 5 {
 		content := []byte(fmt.Sprintf("version %d", i))
-		if _, err := d.SaveSnapshot("/tmp/max.go", content); err != nil {
+		if _, err := d.SaveSnapshot("/tmp/max.go", content, 3); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	files, err := d.SearchFiles("max.go", 10, 0)
+	files, err := d.SearchFiles("max.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,14 +153,74 @@ func TestMaxSnapshots(t *testing.T) {
 	}
 }
 
-func TestGetFile(t *testing.T) {
-	d := newTestDB(t, 0)
+func TestMaxSnapshots_ZeroMeansUnlimited(t *testing.T) {
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/getfile.go", []byte("content")); err != nil {
+	for i := range 10 {
+		content := []byte(fmt.Sprintf("version %d", i))
+		if _, err := d.SaveSnapshot("/tmp/unlimited.go", content, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := d.SearchFiles("unlimited.go", 10, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := d.GetSnapshots(files[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 10 {
+		t.Errorf("got %d snapshots, want 10 (maxSnapshots=0 means unlimited)", len(snapshots))
+	}
+}
+
+func TestMaxSnapshots_PerCall(t *testing.T) {
+	d := newTestDB(t)
+
+	// Save 5 versions with maxSnapshots=0 (unlimited)
+	for i := range 5 {
+		content := []byte(fmt.Sprintf("version %d", i))
+		if _, err := d.SaveSnapshot("/tmp/percall.go", content, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := d.SearchFiles("percall.go", 10, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := d.GetSnapshots(files[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 5 {
+		t.Fatalf("got %d snapshots, want 5", len(snapshots))
+	}
+
+	// Next save with maxSnapshots=3 should prune to 3
+	if _, err := d.SaveSnapshot("/tmp/percall.go", []byte("version 5"), 3); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("getfile.go", 10, 0)
+	snapshots, err = d.GetSnapshots(files[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 3 {
+		t.Errorf("got %d snapshots, want 3 after prune", len(snapshots))
+	}
+}
+
+func TestGetFile(t *testing.T) {
+	d := newTestDB(t)
+
+	if _, err := d.SaveSnapshot("/tmp/getfile.go", []byte("content"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := d.SearchFiles("getfile.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +235,7 @@ func TestGetFile(t *testing.T) {
 }
 
 func TestGetFile_NotFound(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	_, err := d.GetFile("00000000-0000-0000-0000-000000000000")
 	if err == nil {
@@ -184,13 +244,13 @@ func TestGetFile_NotFound(t *testing.T) {
 }
 
 func TestDeleteFile(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/delete.go", []byte("content")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/delete.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("delete.go", 10, 0)
+	files, err := d.SearchFiles("delete.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +266,7 @@ func TestDeleteFile(t *testing.T) {
 }
 
 func TestDeleteFile_NotFound(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	err := d.DeleteFile("00000000-0000-0000-0000-000000000000")
 	if err == nil {
@@ -215,9 +275,9 @@ func TestDeleteFile_NotFound(t *testing.T) {
 }
 
 func TestGetStats_Empty(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,16 +290,16 @@ func TestGetStats_Empty(t *testing.T) {
 }
 
 func TestGetStats_WithData(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aa")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aa"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("bbb")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("bbb"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,17 +314,71 @@ func TestGetStats_WithData(t *testing.T) {
 	}
 }
 
+func TestGetStats_WithDirPrefixes(t *testing.T) {
+	d := newTestDB(t)
+
+	// Create files in two directories
+	if _, err := d.SaveSnapshot("/projects/a.go", []byte("aa"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/projects/b.go", []byte("bbb"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/documents/c.txt", []byte("cccc"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by /projects prefix
+	stats, err := d.GetStats([]string{"/projects"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalFiles != 2 {
+		t.Errorf("TotalFiles = %d, want 2", stats.TotalFiles)
+	}
+	if stats.TotalSnapshots != 2 {
+		t.Errorf("TotalSnapshots = %d, want 2", stats.TotalSnapshots)
+	}
+	if stats.TotalSize != 5 {
+		t.Errorf("TotalSize = %d, want 5", stats.TotalSize)
+	}
+
+	// Filter by /documents prefix
+	stats, err = d.GetStats([]string{"/documents"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalFiles != 1 {
+		t.Errorf("TotalFiles = %d, want 1", stats.TotalFiles)
+	}
+	if stats.TotalSnapshots != 1 {
+		t.Errorf("TotalSnapshots = %d, want 1", stats.TotalSnapshots)
+	}
+	if stats.TotalSize != 4 {
+		t.Errorf("TotalSize = %d, want 4", stats.TotalSize)
+	}
+
+	// No filter returns all
+	stats, err = d.GetStats(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Errorf("TotalFiles = %d, want 3", stats.TotalFiles)
+	}
+}
+
 func TestSearchFiles_Pagination(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/search%d.go", i)
-		if _, err := d.SaveSnapshot(path, []byte("content")); err != nil {
+		if _, err := d.SaveSnapshot(path, []byte("content"), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	files, err := d.SearchFiles("search", 2, 0)
+	files, err := d.SearchFiles("search", 2, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +386,7 @@ func TestSearchFiles_Pagination(t *testing.T) {
 		t.Errorf("page 1: got %d files, want 2", len(files))
 	}
 
-	files, err = d.SearchFiles("search", 2, 2)
+	files, err = d.SearchFiles("search", 2, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +394,7 @@ func TestSearchFiles_Pagination(t *testing.T) {
 		t.Errorf("page 2: got %d files, want 2", len(files))
 	}
 
-	files, err = d.SearchFiles("search", 2, 4)
+	files, err = d.SearchFiles("search", 2, 4, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,10 +403,56 @@ func TestSearchFiles_Pagination(t *testing.T) {
 	}
 }
 
-func TestGetRecentSnapshots_Empty(t *testing.T) {
-	d := newTestDB(t, 0)
+func TestSearchFiles_WithDirPrefixes(t *testing.T) {
+	d := newTestDB(t)
 
-	entries, err := d.GetRecentSnapshots(50, 0, "")
+	if _, err := d.SaveSnapshot("/projects/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/projects/util.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/documents/notes.go", []byte("c"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Search with dir prefix filter
+	files, err := d.SearchFiles(".go", 10, 0, []string{"/projects"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Errorf("got %d files, want 2", len(files))
+	}
+	for _, f := range files {
+		if f.Path != "/projects/main.go" && f.Path != "/projects/util.go" {
+			t.Errorf("unexpected file: %s", f.Path)
+		}
+	}
+
+	// Search with no dir prefix returns all
+	files, err = d.SearchFiles(".go", 10, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3 {
+		t.Errorf("got %d files, want 3", len(files))
+	}
+
+	// Search with multiple dir prefixes
+	files, err = d.SearchFiles(".go", 10, 0, []string{"/projects", "/documents"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3 {
+		t.Errorf("got %d files, want 3", len(files))
+	}
+}
+
+func TestGetRecentSnapshots_Empty(t *testing.T) {
+	d := newTestDB(t)
+
+	entries, err := d.GetRecentSnapshots(50, 0, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -302,19 +462,19 @@ func TestGetRecentSnapshots_Empty(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_WithData(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aaa")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aaa"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("bbb")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("bbb"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aaa-v2")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("aaa-v2"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	entries, err := d.GetRecentSnapshots(50, 0, "")
+	entries, err := d.GetRecentSnapshots(50, 0, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -354,17 +514,17 @@ func TestGetRecentSnapshots_WithData(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_Limit(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	for i := range 5 {
 		content := []byte(fmt.Sprintf("content-%d", i))
 		path := fmt.Sprintf("/tmp/limit%d.go", i)
-		if _, err := d.SaveSnapshot(path, content); err != nil {
+		if _, err := d.SaveSnapshot(path, content, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	entries, err := d.GetRecentSnapshots(3, 0, "")
+	entries, err := d.GetRecentSnapshots(3, 0, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -374,17 +534,17 @@ func TestGetRecentSnapshots_Limit(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_Offset(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	for i := range 5 {
 		content := []byte(fmt.Sprintf("content-%d", i))
 		path := fmt.Sprintf("/tmp/offset%d.go", i)
-		if _, err := d.SaveSnapshot(path, content); err != nil {
+		if _, err := d.SaveSnapshot(path, content, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	page1, err := d.GetRecentSnapshots(2, 0, "")
+	page1, err := d.GetRecentSnapshots(2, 0, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 0) error: %v", err)
 	}
@@ -392,7 +552,7 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 		t.Errorf("page1: got %d entries, want 2", len(page1))
 	}
 
-	page2, err := d.GetRecentSnapshots(2, 2, "")
+	page2, err := d.GetRecentSnapshots(2, 2, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 2) error: %v", err)
 	}
@@ -405,7 +565,7 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 		t.Error("page1 and page2 overlap")
 	}
 
-	page3, err := d.GetRecentSnapshots(2, 4, "")
+	page3, err := d.GetRecentSnapshots(2, 4, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots(2, 4) error: %v", err)
 	}
@@ -414,14 +574,135 @@ func TestGetRecentSnapshots_Offset(t *testing.T) {
 	}
 }
 
-func TestUUIDv7_Generation(t *testing.T) {
-	d := newTestDB(t, 0)
+func TestGetRecentSnapshots_WithDirPrefixes(t *testing.T) {
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/uuid.go", []byte("content")); err != nil {
+	// Create files in different directories
+	if _, err := d.SaveSnapshot("/projects/src/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/projects/src/util.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/documents/notes.txt", []byte("c"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("uuid.go", 10, 0)
+	// Filter by /projects
+	entries, err := d.GetRecentSnapshots(50, 0, "", []string{"/projects"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	for _, e := range entries {
+		if e.FilePath != "/projects/src/main.go" && e.FilePath != "/projects/src/util.go" {
+			t.Errorf("unexpected entry: %s", e.FilePath)
+		}
+	}
+
+	// Filter by /documents
+	entries, err = d.GetRecentSnapshots(50, 0, "", []string{"/documents"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].FilePath != "/documents/notes.txt" {
+		t.Errorf("FilePath = %s, want /documents/notes.txt", entries[0].FilePath)
+	}
+
+	// No filter returns all
+	entries, err = d.GetRecentSnapshots(50, 0, "", nil)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("got %d entries, want 3", len(entries))
+	}
+}
+
+func TestGetRecentSnapshots_DirPrefixesWithQuery(t *testing.T) {
+	d := newTestDB(t)
+
+	if _, err := d.SaveSnapshot("/projects/main.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/projects/util.go", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/documents/main.txt", []byte("c"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Query "main" with dir prefix /projects -> only /projects/main.go
+	entries, err := d.GetRecentSnapshots(50, 0, "main", []string{"/projects"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].FilePath != "/projects/main.go" {
+		t.Errorf("FilePath = %s, want /projects/main.go", entries[0].FilePath)
+	}
+
+	// Query "main" without dir prefix -> both main files
+	entries, err = d.GetRecentSnapshots(50, 0, "main", nil)
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+}
+
+func TestGetRecentSnapshots_DirPrefixesWithRenames(t *testing.T) {
+	d := newTestDB(t)
+
+	// Create files and a rename
+	if _, err := d.SaveSnapshot("/projects/old.go", []byte("a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveSnapshot("/documents/doc.txt", []byte("b"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SaveRename("/projects/old.go", "/projects/new.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter by /projects should include both the save and the rename
+	entries, err := d.GetRecentSnapshots(50, 0, "", []string{"/projects"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (1 save + 1 rename)", len(entries))
+	}
+
+	// Filter by /documents should only include the doc save
+	entries, err = d.GetRecentSnapshots(50, 0, "", []string{"/documents"})
+	if err != nil {
+		t.Fatalf("GetRecentSnapshots() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].FilePath != "/documents/doc.txt" {
+		t.Errorf("FilePath = %s, want /documents/doc.txt", entries[0].FilePath)
+	}
+}
+
+func TestUUIDv7_Generation(t *testing.T) {
+	d := newTestDB(t)
+
+	if _, err := d.SaveSnapshot("/tmp/uuid.go", []byte("content"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := d.SearchFiles("uuid.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,14 +822,14 @@ func TestMigrateIfNeeded_OldSchema(t *testing.T) {
 	createOldSchemaDB(t, dbPath)
 
 	// Open with New(), which should trigger migration
-	d, err := New(dbPath, 0)
+	d, err := New(dbPath)
 	if err != nil {
 		t.Fatalf("New() after migration error: %v", err)
 	}
 	defer d.Close()
 
 	// Verify files were migrated with UUIDv7 IDs
-	files1, err := d.SearchFiles("old1.go", 10, 0)
+	files1, err := d.SearchFiles("old1.go", 10, 0, nil)
 	if err != nil {
 		t.Fatalf("SearchFiles(old1): %v", err)
 	}
@@ -572,7 +853,7 @@ func TestMigrateIfNeeded_OldSchema(t *testing.T) {
 		t.Errorf("file1 Updated = %d, want 2000", files1[0].Updated)
 	}
 
-	files2, err := d.SearchFiles("old2.go", 10, 0)
+	files2, err := d.SearchFiles("old2.go", 10, 0, nil)
 	if err != nil {
 		t.Fatalf("SearchFiles(old2): %v", err)
 	}
@@ -620,7 +901,7 @@ func TestMigrateIfNeeded_OldSchema(t *testing.T) {
 	}
 
 	// Verify stats are correct
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatalf("GetStats(): %v", err)
 	}
@@ -633,10 +914,10 @@ func TestMigrateIfNeeded_OldSchema(t *testing.T) {
 }
 
 func TestSaveRename_Basic(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create a file with a snapshot
-	if _, err := d.SaveSnapshot("/tmp/old.go", []byte("package main")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/old.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -659,7 +940,7 @@ func TestSaveRename_Basic(t *testing.T) {
 	}
 
 	// Verify rename record
-	oldFiles, err := d.SearchFiles("old.go", 10, 0)
+	oldFiles, err := d.SearchFiles("old.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,10 +960,10 @@ func TestSaveRename_Basic(t *testing.T) {
 }
 
 func TestSaveRename_ChainedRenames(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create initial file
-	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("package main")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/a.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -693,7 +974,7 @@ func TestSaveRename_ChainedRenames(t *testing.T) {
 	}
 
 	// Save snapshot for B so it exists
-	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("package main")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/b.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -721,7 +1002,7 @@ func TestSaveRename_ChainedRenames(t *testing.T) {
 }
 
 func TestSaveRename_OldFileNotFound(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	newFileID, err := d.SaveRename("/tmp/nonexistent.go", "/tmp/new.go")
 	if err != nil {
@@ -733,12 +1014,12 @@ func TestSaveRename_OldFileNotFound(t *testing.T) {
 }
 
 func TestGetRenames_Empty(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/norenames.go", []byte("content")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/norenames.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-	files, err := d.SearchFiles("norenames.go", 10, 0)
+	files, err := d.SearchFiles("norenames.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -753,13 +1034,13 @@ func TestGetRenames_Empty(t *testing.T) {
 }
 
 func TestSaveRename_ExistingNewFile(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create both files
-	if _, err := d.SaveSnapshot("/tmp/old2.go", []byte("old")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/old2.go", []byte("old"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/existing.go", []byte("existing")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/existing.go", []byte("existing"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -770,7 +1051,7 @@ func TestSaveRename_ExistingNewFile(t *testing.T) {
 	}
 
 	// Should reuse the existing file ID
-	existingFiles, err := d.SearchFiles("existing.go", 10, 0)
+	existingFiles, err := d.SearchFiles("existing.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -781,13 +1062,13 @@ func TestSaveRename_ExistingNewFile(t *testing.T) {
 
 func TestMigrateIfNeeded_AlreadyNewSchema(t *testing.T) {
 	// New DB already has TEXT schema; migration should be a no-op
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/new.go", []byte("content")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/new.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := d.SearchFiles("new.go", 10, 0)
+	files, err := d.SearchFiles("new.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -835,14 +1116,14 @@ func TestMigrateIfNeeded_EmptyOldSchema(t *testing.T) {
 	sqlDB.Close()
 
 	// Open with New() — migration should succeed with empty tables
-	d, err := New(dbPath, 0)
+	d, err := New(dbPath)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 	defer d.Close()
 
 	// Should be able to use the DB normally after migration
-	saved, err := d.SaveSnapshot("/tmp/post_migrate.go", []byte("after migration"))
+	saved, err := d.SaveSnapshot("/tmp/post_migrate.go", []byte("after migration"), 0)
 	if err != nil {
 		t.Fatalf("SaveSnapshot() error: %v", err)
 	}
@@ -850,7 +1131,7 @@ func TestMigrateIfNeeded_EmptyOldSchema(t *testing.T) {
 		t.Error("SaveSnapshot() = false, want true")
 	}
 
-	files, err := d.SearchFiles("post_migrate", 10, 0)
+	files, err := d.SearchFiles("post_migrate", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -867,7 +1148,7 @@ func TestMigrateIfNeeded_EmptyOldSchema(t *testing.T) {
 }
 
 func TestDatabaseSize(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	size, err := d.DatabaseSize()
 	if err != nil {
@@ -879,13 +1160,13 @@ func TestDatabaseSize(t *testing.T) {
 }
 
 func TestCreateDatabaseSnapshot(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Add some data
-	if _, err := d.SaveSnapshot("/tmp/snap_test.go", []byte("package main")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/snap_test.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/snap_test2.go", []byte("package lib")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/snap_test2.go", []byte("package lib"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -930,7 +1211,7 @@ func TestCreateDatabaseSnapshot(t *testing.T) {
 }
 
 func TestCreateDatabaseSnapshot_EmptyDB(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	tmpDir := t.TempDir()
 	snapshotPath, err := d.CreateDatabaseSnapshot(tmpDir)
@@ -952,14 +1233,14 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migrate_ops.db")
 	createOldSchemaDB(t, dbPath)
 
-	d, err := New(dbPath, 0)
+	d, err := New(dbPath)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 	defer d.Close()
 
 	// Save a new snapshot after migration
-	saved, err := d.SaveSnapshot("/tmp/old1.go", []byte("updated content"))
+	saved, err := d.SaveSnapshot("/tmp/old1.go", []byte("updated content"), 0)
 	if err != nil {
 		t.Fatalf("SaveSnapshot() error: %v", err)
 	}
@@ -968,7 +1249,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 
 	// Verify the new snapshot was added to the existing migrated file
-	files, err := d.SearchFiles("old1.go", 10, 0)
+	files, err := d.SearchFiles("old1.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +1263,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 
 	// Verify GetRecentSnapshots works across migrated and new data
-	entries, err := d.GetRecentSnapshots(50, 0, "")
+	entries, err := d.GetRecentSnapshots(50, 0, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -992,7 +1273,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 	}
 
 	// Verify DeleteFile works on migrated file
-	files2, err := d.SearchFiles("old2.go", 10, 0)
+	files2, err := d.SearchFiles("old2.go", 10, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1000,7 +1281,7 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 		t.Fatalf("DeleteFile() error: %v", err)
 	}
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1010,12 +1291,13 @@ func TestMigrateIfNeeded_PostMigrationOperations(t *testing.T) {
 }
 
 func TestSaveSnapshotBatch_Basic(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	filePaths := []string{"/tmp/a.go", "/tmp/b.go", "/tmp/c.go"}
 	contents := [][]byte{[]byte("aaa"), []byte("bbb"), []byte("ccc")}
+	maxSnapshots := []int{0, 0, 0}
 
-	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents, maxSnapshots)
 
 	for i, err := range errs {
 		if err != nil {
@@ -1028,7 +1310,7 @@ func TestSaveSnapshotBatch_Basic(t *testing.T) {
 		}
 	}
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1041,15 +1323,16 @@ func TestSaveSnapshotBatch_Basic(t *testing.T) {
 }
 
 func TestSaveSnapshotBatch_DuplicateSkip(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// First batch
 	filePaths := []string{"/tmp/dup.go"}
 	contents := [][]byte{[]byte("content")}
-	d.SaveSnapshotBatch(filePaths, contents)
+	maxSnapshots := []int{0}
+	d.SaveSnapshotBatch(filePaths, contents, maxSnapshots)
 
 	// Second batch with same content
-	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents, maxSnapshots)
 
 	if errs[0] != nil {
 		t.Fatalf("SaveSnapshotBatch() error: %v", errs[0])
@@ -1058,7 +1341,7 @@ func TestSaveSnapshotBatch_DuplicateSkip(t *testing.T) {
 		t.Error("SaveSnapshotBatch() saved duplicate, want skip")
 	}
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1067,11 +1350,38 @@ func TestSaveSnapshotBatch_DuplicateSkip(t *testing.T) {
 	}
 }
 
+func TestSaveSnapshotBatch_WithMaxSnapshots(t *testing.T) {
+	d := newTestDB(t)
+
+	// Save 5 versions of the same file with maxSnapshots=3
+	for i := range 5 {
+		filePaths := []string{"/tmp/batch_max.go"}
+		contents := [][]byte{[]byte(fmt.Sprintf("version %d", i))}
+		maxSnapshots := []int{3}
+		_, errs := d.SaveSnapshotBatch(filePaths, contents, maxSnapshots)
+		if errs[0] != nil {
+			t.Fatalf("batch %d error: %v", i, errs[0])
+		}
+	}
+
+	files, err := d.SearchFiles("batch_max.go", 10, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := d.GetSnapshots(files[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 3 {
+		t.Errorf("got %d snapshots, want 3 (maxSnapshots limit)", len(snapshots))
+	}
+}
+
 func TestGetRecentSnapshots_IncludesRenames(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create a file and rename it
-	if _, err := d.SaveSnapshot("/tmp/before.go", []byte("content")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/before.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
 	_, err := d.SaveRename("/tmp/before.go", "/tmp/after.go")
@@ -1079,7 +1389,7 @@ func TestGetRecentSnapshots_IncludesRenames(t *testing.T) {
 		t.Fatalf("SaveRename() error: %v", err)
 	}
 
-	entries, err := d.GetRecentSnapshots(50, 0, "")
+	entries, err := d.GetRecentSnapshots(50, 0, "", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1116,26 +1426,26 @@ func TestGetRecentSnapshots_IncludesRenames(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create 3 saves and 2 renames = 5 total entries
-	if _, err := d.SaveSnapshot("/tmp/p1.go", []byte("c1")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/p1.go", []byte("c1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/p2.go", []byte("c2")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/p2.go", []byte("c2"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.SaveRename("/tmp/p1.go", "/tmp/p1renamed.go"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/p3.go", []byte("c3")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/p3.go", []byte("c3"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.SaveRename("/tmp/p2.go", "/tmp/p2renamed.go"); err != nil {
 		t.Fatal(err)
 	}
 
-	page1, err := d.GetRecentSnapshots(3, 0, "")
+	page1, err := d.GetRecentSnapshots(3, 0, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1143,7 +1453,7 @@ func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
 		t.Errorf("page1: got %d entries, want 3", len(page1))
 	}
 
-	page2, err := d.GetRecentSnapshots(3, 3, "")
+	page2, err := d.GetRecentSnapshots(3, 3, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1165,17 +1475,19 @@ func TestGetRecentSnapshots_RenamesPagination(t *testing.T) {
 }
 
 func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	n := 100
 	filePaths := make([]string, n)
 	contents := make([][]byte, n)
+	maxSnapshots := make([]int, n)
 	for i := range n {
 		filePaths[i] = fmt.Sprintf("/tmp/batch%d.go", i)
 		contents[i] = []byte(fmt.Sprintf("content %d", i))
+		maxSnapshots[i] = 0
 	}
 
-	saved, errs := d.SaveSnapshotBatch(filePaths, contents)
+	saved, errs := d.SaveSnapshotBatch(filePaths, contents, maxSnapshots)
 
 	for i, err := range errs {
 		if err != nil {
@@ -1192,7 +1504,7 @@ func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
 		t.Errorf("saved %d, want %d", savedCount, n)
 	}
 
-	stats, err := d.GetStats()
+	stats, err := d.GetStats(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1202,20 +1514,20 @@ func TestSaveSnapshotBatch_ManyFiles(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_QueryFiltersSaveEntries(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
-	if _, err := d.SaveSnapshot("/tmp/project/src/main.go", []byte("package main")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/project/src/main.go", []byte("package main"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/project/src/util.go", []byte("package util")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/project/src/util.go", []byte("package util"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/project/test/main_test.go", []byte("package test"), 0); err != nil {
 		t.Fatal(err)
 	}
 
 	// Given: query that matches only "main"
-	entries, err := d.GetRecentSnapshots(50, 0, "main")
+	entries, err := d.GetRecentSnapshots(50, 0, "main", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1231,7 +1543,7 @@ func TestGetRecentSnapshots_QueryFiltersSaveEntries(t *testing.T) {
 	}
 
 	// Given: query that matches only "util"
-	entries, err = d.GetRecentSnapshots(50, 0, "util")
+	entries, err = d.GetRecentSnapshots(50, 0, "util", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1243,7 +1555,7 @@ func TestGetRecentSnapshots_QueryFiltersSaveEntries(t *testing.T) {
 	}
 
 	// Given: query that matches nothing
-	entries, err = d.GetRecentSnapshots(50, 0, "nonexistent")
+	entries, err = d.GetRecentSnapshots(50, 0, "nonexistent", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1253,13 +1565,13 @@ func TestGetRecentSnapshots_QueryFiltersSaveEntries(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create files and renames
-	if _, err := d.SaveSnapshot("/tmp/project/old_name.go", []byte("content")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/project/old_name.go", []byte("content"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/project/unrelated.go", []byte("other")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/project/unrelated.go", []byte("other"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.SaveRename("/tmp/project/old_name.go", "/tmp/project/new_name.go"); err != nil {
@@ -1267,7 +1579,7 @@ func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
 	}
 
 	// Given: query matching "old_name" — should match the rename entry via old_path
-	entries, err := d.GetRecentSnapshots(50, 0, "old_name")
+	entries, err := d.GetRecentSnapshots(50, 0, "old_name", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1276,7 +1588,7 @@ func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
 	}
 
 	// Given: query matching "new_name" — should match the rename entry via new_path
-	entries, err = d.GetRecentSnapshots(50, 0, "new_name")
+	entries, err = d.GetRecentSnapshots(50, 0, "new_name", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1288,7 +1600,7 @@ func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
 	}
 
 	// Given: query matching "unrelated" — should only match the save
-	entries, err = d.GetRecentSnapshots(50, 0, "unrelated")
+	entries, err = d.GetRecentSnapshots(50, 0, "unrelated", nil)
 	if err != nil {
 		t.Fatalf("GetRecentSnapshots() error: %v", err)
 	}
@@ -1301,25 +1613,25 @@ func TestGetRecentSnapshots_QueryFiltersRenameEntries(t *testing.T) {
 }
 
 func TestGetRecentSnapshots_QueryWithPagination(t *testing.T) {
-	d := newTestDB(t, 0)
+	d := newTestDB(t)
 
 	// Create 5 files matching "pagq"
 	for i := range 5 {
 		path := fmt.Sprintf("/tmp/pagq%d.go", i)
-		if _, err := d.SaveSnapshot(path, []byte(fmt.Sprintf("content-%d", i))); err != nil {
+		if _, err := d.SaveSnapshot(path, []byte(fmt.Sprintf("content-%d", i)), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Create 2 files NOT matching "pagq"
-	if _, err := d.SaveSnapshot("/tmp/other1.go", []byte("x")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/other1.go", []byte("x"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SaveSnapshot("/tmp/other2.go", []byte("y")); err != nil {
+	if _, err := d.SaveSnapshot("/tmp/other2.go", []byte("y"), 0); err != nil {
 		t.Fatal(err)
 	}
 
 	// Given: query "pagq" with limit 3
-	page1, err := d.GetRecentSnapshots(3, 0, "pagq")
+	page1, err := d.GetRecentSnapshots(3, 0, "pagq", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1328,7 +1640,7 @@ func TestGetRecentSnapshots_QueryWithPagination(t *testing.T) {
 	}
 
 	// Given: query "pagq" with limit 3, offset 3
-	page2, err := d.GetRecentSnapshots(3, 3, "pagq")
+	page2, err := d.GetRecentSnapshots(3, 3, "pagq", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1345,5 +1657,40 @@ func TestGetRecentSnapshots_QueryWithPagination(t *testing.T) {
 		if ids[e.SnapshotID] {
 			t.Errorf("overlap: %s found in both pages", e.SnapshotID)
 		}
+	}
+}
+
+func TestBuildDirFilter(t *testing.T) {
+	// Empty prefixes
+	clause, args := buildDirFilter("path", nil)
+	if clause != "" {
+		t.Errorf("empty prefixes: clause = %q, want empty", clause)
+	}
+	if len(args) != 0 {
+		t.Errorf("empty prefixes: args = %v, want empty", args)
+	}
+
+	// Single prefix (trailing separator appended)
+	clause, args = buildDirFilter("f.path", []string{"/projects"})
+	if clause != "(f.path LIKE ? || '%')" {
+		t.Errorf("single prefix: clause = %q", clause)
+	}
+	if len(args) != 1 || args[0] != "/projects/" {
+		t.Errorf("single prefix: args = %v, want [/projects/]", args)
+	}
+
+	// Single prefix with existing trailing separator (no double slash)
+	clause, args = buildDirFilter("f.path", []string{"/projects/"})
+	if len(args) != 1 || args[0] != "/projects/" {
+		t.Errorf("trailing slash preserved: args = %v, want [/projects/]", args)
+	}
+
+	// Multiple prefixes (trailing separator appended)
+	clause, args = buildDirFilter("path", []string{"/a", "/b"})
+	if clause != "(path LIKE ? || '%' OR path LIKE ? || '%')" {
+		t.Errorf("multi prefix: clause = %q", clause)
+	}
+	if len(args) != 2 || args[0] != "/a/" || args[1] != "/b/" {
+		t.Errorf("multi prefix: args = %v, want [/a/ /b/]", args)
 	}
 }

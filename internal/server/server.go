@@ -27,18 +27,24 @@ type Server struct {
 	db         *db.DB
 	staticFS   fs.FS
 	watchDirs  []string
+	watchSets  []config.WatchSet
 	basicAuth  *config.BasicAuthConfig
 	mux        *http.ServeMux
 	sseClients map[chan string]struct{}
 	sseMu      sync.Mutex
 }
 
-// New creates a new Server with the given database, static file system, watch directories, and optional basic auth config.
-func New(database *db.DB, staticFS fs.FS, watchDirs []string, basicAuth *config.BasicAuthConfig) *Server {
+// New creates a new Server with the given database, static file system, watch sets, and optional basic auth config.
+func New(database *db.DB, staticFS fs.FS, watchSets []config.WatchSet, basicAuth *config.BasicAuthConfig) *Server {
+	var allDirs []string
+	for _, ws := range watchSets {
+		allDirs = append(allDirs, ws.Dirs...)
+	}
 	s := &Server{
 		db:         database,
 		staticFS:   staticFS,
-		watchDirs:  watchDirs,
+		watchDirs:  allDirs,
+		watchSets:  watchSets,
 		basicAuth:  basicAuth,
 		mux:        http.NewServeMux(),
 		sseClients: make(map[chan string]struct{}),
@@ -132,8 +138,10 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query().Get("q")
+	watchSetName := r.URL.Query().Get("watchSet")
+	dirPrefixes := s.resolveDirPrefixes(watchSetName)
 
-	entries, err := s.db.GetRecentSnapshots(limit+1, offset, query)
+	entries, err := s.db.GetRecentSnapshots(limit+1, offset, query, dirPrefixes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -206,7 +214,10 @@ func (s *Server) handleSearchFiles(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
-	files, err := s.db.SearchFiles(query, limit, offset)
+	watchSetName := r.URL.Query().Get("watchSet")
+	dirPrefixes := s.resolveDirPrefixes(watchSetName)
+
+	files, err := s.db.SearchFiles(query, limit, offset, dirPrefixes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -400,28 +411,58 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// watchSetInfo represents a WatchSet in the stats API response.
+type watchSetInfo struct {
+	Name string   `json:"name"`
+	Dirs []string `json:"dirs"`
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.db.GetStats()
+	watchSetName := r.URL.Query().Get("watchSet")
+	dirPrefixes := s.resolveDirPrefixes(watchSetName)
+
+	stats, err := s.db.GetStats(dirPrefixes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	type statsResponse struct {
-		TotalFiles     int      `json:"totalFiles"`
-		TotalSnapshots int      `json:"totalSnapshots"`
-		TotalSize      int64    `json:"totalSize"`
-		WatchDirs      []string `json:"watchDirs"`
+		TotalFiles     int            `json:"totalFiles"`
+		TotalSnapshots int            `json:"totalSnapshots"`
+		TotalSize      int64          `json:"totalSize"`
+		WatchDirs      []string       `json:"watchDirs"`
+		WatchSets      []watchSetInfo `json:"watchSets"`
 	}
 	dirs := s.watchDirs
 	if dirs == nil {
 		dirs = []string{}
+	}
+	wsInfos := make([]watchSetInfo, len(s.watchSets))
+	for i, ws := range s.watchSets {
+		wsInfos[i] = watchSetInfo{Name: ws.Name, Dirs: ws.Dirs}
 	}
 	writeJSON(w, http.StatusOK, statsResponse{
 		TotalFiles:     stats.TotalFiles,
 		TotalSnapshots: stats.TotalSnapshots,
 		TotalSize:      stats.TotalSize,
 		WatchDirs:      dirs,
+		WatchSets:      wsInfos,
 	})
+}
+
+// resolveDirPrefixes returns the dir prefixes for a given watchSet name.
+// Returns nil (no filter) if name is empty.
+// Returns the matching WatchSet's dirs if found.
+func (s *Server) resolveDirPrefixes(watchSetName string) []string {
+	if watchSetName == "" {
+		return nil
+	}
+	for _, ws := range s.watchSets {
+		if ws.Name == watchSetName {
+			return ws.Dirs
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleDatabaseDownload(w http.ResponseWriter, r *http.Request) {

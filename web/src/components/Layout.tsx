@@ -3,6 +3,7 @@ import { useStats, databaseDownloadUrl } from '../lib/api'
 import { formatBytes } from '../lib/format'
 import { navigate } from '../lib/router'
 import { useTheme } from '../lib/theme'
+import { useWatchSetState } from '../lib/watchSetState'
 
 function SunIcon() {
   return (
@@ -51,6 +52,10 @@ function MoonIcon() {
 export default function Layout({ children }: { children: ReactNode }) {
   const { data: stats, error } = useStats()
   const { theme, toggleTheme } = useTheme()
+  const { activeWatchSet, setActiveWatchSet } = useWatchSetState()
+
+  const watchSets = stats?.watchSets ?? []
+  const showTabs = watchSets.length >= 2
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -67,7 +72,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               File History Tracker
             </a>
-            {stats?.watchDirs.length === 1 && (
+            {!showTabs && stats?.watchDirs.length === 1 && (
               <span className="text-sm text-gray-400 dark:text-gray-500 font-mono">
                 {stats.watchDirs[0]}
               </span>
@@ -104,6 +109,26 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      {showTabs && (
+        <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="max-w-7xl mx-auto px-4 flex gap-1 py-1">
+            {watchSets.map((ws) => (
+              <button
+                key={ws.name}
+                type="button"
+                onClick={() => setActiveWatchSet(ws.name)}
+                className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                  activeWatchSet === ws.name
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
+                }`}
+              >
+                {ws.name}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
       <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
     </div>
   )

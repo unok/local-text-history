@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { useHistory, useStripWatchDir } from '../lib/api'
+import { useHistory, useStats, useStripWatchDir } from '../lib/api'
 import { formatDateTime, formatBytes } from '../lib/format'
 import { navigate, replaceUrl } from '../lib/router'
+import { useWatchSetState } from '../lib/watchSetState'
 
 const PAGE_SIZE = 30
 
@@ -11,25 +12,55 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ query: initialQuery }: DashboardProps) {
-  const [page, setPage] = useState(0)
-  const [query, setQuery] = useState(initialQuery)
+  const { activeWatchSet, tabState, setQuery: setTabQuery, setPage: setTabPage } = useWatchSetState()
+  const { data: stats } = useStats()
+
+  // When multiple watch sets exist, use tab state; otherwise fall back to local state
+  const hasWatchSets = activeWatchSet !== null
+  const [localPage, setLocalPage] = useState(0)
+  const [localQuery, setLocalQuery] = useState(initialQuery)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  const page = hasWatchSets ? tabState.page : localPage
+  const query = hasWatchSets ? tabState.query : localQuery
+  const effectiveQuery = hasWatchSets ? query : initialQuery
+
   const offset = page * PAGE_SIZE
-  const { data, isLoading, error } = useHistory(PAGE_SIZE, offset, initialQuery)
-  const stripWatchDir = useStripWatchDir()
+  const { data, isLoading, error } = useHistory(PAGE_SIZE, offset, effectiveQuery, activeWatchSet ?? undefined)
+
+  // Resolve active watch set's dirs for stripping paths
+  const activeWatchSetDirs = activeWatchSet
+    ? stats?.watchSets?.find((ws) => ws.name === activeWatchSet)?.dirs
+    : undefined
+  const stripWatchDir = useStripWatchDir(activeWatchSetDirs)
 
   useEffect(() => {
-    setQuery(initialQuery)
-  }, [initialQuery])
+    if (!hasWatchSets) {
+      setLocalQuery(initialQuery)
+    }
+  }, [initialQuery, hasWatchSets])
 
   useEffect(() => {
-    setPage(0)
-  }, [initialQuery])
+    if (!hasWatchSets) {
+      setLocalPage(0)
+    }
+  }, [initialQuery, hasWatchSets])
+
+  function setPage(p: number) {
+    if (hasWatchSets) {
+      setTabPage(p)
+    } else {
+      setLocalPage(p)
+    }
+  }
 
   function handleQueryChange(value: string) {
-    setQuery(value)
-    setPage(0)
+    if (hasWatchSets) {
+      setTabQuery(value)
+    } else {
+      setLocalQuery(value)
+      setLocalPage(0)
+    }
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       replaceUrl(value ? `/?q=${encodeURIComponent(value)}` : '/')

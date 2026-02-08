@@ -29,11 +29,17 @@ export interface DiffResult {
   to: string
 }
 
+export interface WatchSetInfo {
+  name: string
+  dirs: string[]
+}
+
 export interface Stats {
   totalFiles: number
   totalSnapshots: number
   totalSize: number
   watchDirs: string[]
+  watchSets: WatchSetInfo[]
 }
 
 export interface HistoryEntry {
@@ -76,16 +82,6 @@ async function deleteRequest(url: string): Promise<void> {
 }
 
 // React Query hooks
-
-export function useSearchFiles(query: string, limit: number, offset: number) {
-  return useQuery({
-    queryKey: ['files', query, limit, offset],
-    queryFn: () =>
-      fetchJSON<FileRecord[]>(
-        `/api/files?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`,
-      ),
-  })
-}
 
 export function useSnapshots(fileId: string | null) {
   return useQuery({
@@ -146,9 +142,9 @@ export interface HistoryResponse {
   hasMore: boolean
 }
 
-export function useHistory(limit: number, offset: number, query: string) {
+export function useHistory(limit: number, offset: number, query: string, watchSet?: string) {
   return useQuery({
-    queryKey: ['history', limit, offset, query],
+    queryKey: ['history', limit, offset, query, watchSet],
     queryFn: () => {
       const params = new URLSearchParams({
         limit: String(limit),
@@ -156,6 +152,9 @@ export function useHistory(limit: number, offset: number, query: string) {
       })
       if (query) {
         params.set('q', query)
+      }
+      if (watchSet) {
+        params.set('watchSet', watchSet)
       }
       return fetchJSON<HistoryResponse>(`/api/history?${params.toString()}`)
     },
@@ -185,18 +184,18 @@ export function databaseDownloadUrl(): string {
   return '/api/database/download'
 }
 
-export function useStripWatchDir(): (filePath: string) => string {
+export function useStripWatchDir(activeWatchSetDirs?: string[]): (filePath: string) => string {
   const { data: stats } = useStats()
   return useCallback(
     (filePath: string): string => {
-      if (stats?.watchDirs.length === 1) {
-        const prefix = stats.watchDirs[0]
-        if (filePath.startsWith(prefix + '/')) {
-          return filePath.slice(prefix.length + 1)
+      const dirs = activeWatchSetDirs ?? stats?.watchDirs ?? []
+      for (const dir of dirs) {
+        if (filePath.startsWith(dir + '/')) {
+          return filePath.slice(dir.length + 1)
         }
       }
       return filePath
     },
-    [stats],
+    [activeWatchSetDirs, stats],
   )
 }

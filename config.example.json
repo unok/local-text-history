@@ -1,8 +1,14 @@
 {
-  "watchDirs": ["/home/user/projects"],
-  "debounceSec": 2,
+  "watchSets": [
+    {
+      "name": "projects",
+      "dirs": ["/home/user/projects"],
+      "extensions": [".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs"],
+      "debounceSec": 2,
+      "maxFileSize": 1048576,
+      "maxSnapshots": 0
+    }
+  ],
   "port": 9876,
-  "dbPath": "~/.local/share/file-history/history.db",
-  "maxFileSize": 1048576,
-  "maxSnapshots": 0
+  "dbPath": "~/.local/share/file-history/history.db"
 }

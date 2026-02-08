@@ -15,18 +15,45 @@ type BasicAuthConfig struct {
 	Password string `json:"password"`
 }
 
+// WatchSet defines a named group of directories with shared monitoring settings.
+type WatchSet struct {
+	Name            string   `json:"name"`
+	Dirs            []string `json:"dirs"`
+	Extensions      []string `json:"extensions"`
+	ExcludePatterns []string `json:"excludePatterns"`
+	DebounceSec     int      `json:"debounceSec"`
+	MaxFileSize     int64    `json:"maxFileSize"`
+	MaxSnapshots    int      `json:"maxSnapshots"`
+}
+
 // Config holds all application configuration.
 type Config struct {
-	WatchDirs       []string         `json:"watchDirs"`
-	DebounceSec     int              `json:"debounceSec"`
-	BindAddress     string           `json:"bindAddress"`
-	Port            int              `json:"port"`
-	DBPath          string           `json:"dbPath"`
-	Extensions      []string         `json:"extensions"`
-	ExcludePatterns []string         `json:"excludePatterns"`
-	MaxFileSize     int64            `json:"maxFileSize"`
-	MaxSnapshots    int              `json:"maxSnapshots"`
-	BasicAuth       *BasicAuthConfig `json:"basicAuth,omitempty"`
+	// Legacy fields for JSON deserialization only.
+	// After normalizeWatchSets, these are cleared; use WatchSets[] instead.
+	WatchDirs       []string `json:"watchDirs,omitempty"`
+	Extensions      []string `json:"extensions,omitempty"`
+	ExcludePatterns []string `json:"excludePatterns,omitempty"`
+	DebounceSec     int      `json:"debounceSec"`
+	MaxFileSize     int64    `json:"maxFileSize"`
+	MaxSnapshots    int      `json:"maxSnapshots"`
+
+	// New: named watch sets with per-set configuration
+	WatchSets []WatchSet `json:"watchSets,omitempty"`
+
+	// Global settings
+	BindAddress string           `json:"bindAddress"`
+	Port        int              `json:"port"`
+	DBPath      string           `json:"dbPath"`
+	BasicAuth   *BasicAuthConfig `json:"basicAuth,omitempty"`
+}
+
+// AllWatchDirs returns all directories from all WatchSets flattened.
+func (c *Config) AllWatchDirs() []string {
+	var dirs []string
+	for _, ws := range c.WatchSets {
+		dirs = append(dirs, ws.Dirs...)
+	}
+	return dirs
 }
 
 // Load reads a JSON config file and returns a validated Config.
@@ -57,9 +84,6 @@ func Load(path string) (Config, error) {
 }
 
 func applyDefaults(cfg *Config) {
-	if cfg.DebounceSec == 0 {
-		cfg.DebounceSec = 2
-	}
 	if cfg.BindAddress == "" {
 		cfg.BindAddress = "0.0.0.0"
 	}
@@ -69,38 +93,73 @@ func applyDefaults(cfg *Config) {
 	if cfg.DBPath == "" {
 		cfg.DBPath = "~/.local/share/file-history/history.db"
 	}
-	if cfg.MaxFileSize == 0 {
-		cfg.MaxFileSize = 1048576 // 1MB
+
+	normalizeWatchSets(cfg)
+}
+
+// normalizeWatchSets converts legacy watchDirs format to WatchSets,
+// or applies defaults to existing WatchSets.
+func normalizeWatchSets(cfg *Config) {
+	if len(cfg.WatchSets) > 0 {
+		for i := range cfg.WatchSets {
+			applyWatchSetDefaults(&cfg.WatchSets[i])
+		}
+		cfg.WatchDirs = cfg.AllWatchDirs()
+		return
 	}
-	if cfg.ExcludePatterns == nil {
-		cfg.ExcludePatterns = defaultExcludePatterns()
+
+	if len(cfg.WatchDirs) > 0 {
+		ws := WatchSet{
+			Name:            defaultWatchSetName(cfg.WatchDirs),
+			Dirs:            cfg.WatchDirs,
+			Extensions:      cfg.Extensions,
+			ExcludePatterns: cfg.ExcludePatterns,
+			DebounceSec:     cfg.DebounceSec,
+			MaxFileSize:     cfg.MaxFileSize,
+			MaxSnapshots:    cfg.MaxSnapshots,
+		}
+		applyWatchSetDefaults(&ws)
+		cfg.WatchSets = []WatchSet{ws}
+	}
+
+	// Clear legacy fields after conversion to prevent accidental use.
+	// All per-set values are now in cfg.WatchSets[].
+	cfg.Extensions = nil
+	cfg.ExcludePatterns = nil
+	cfg.DebounceSec = 0
+	cfg.MaxFileSize = 0
+	cfg.MaxSnapshots = 0
+}
+
+func applyWatchSetDefaults(ws *WatchSet) {
+	if ws.DebounceSec == 0 {
+		ws.DebounceSec = 2
+	}
+	if ws.MaxFileSize == 0 {
+		ws.MaxFileSize = 1048576 // 1MB
+	}
+	if ws.ExcludePatterns == nil {
+		ws.ExcludePatterns = defaultExcludePatterns()
+	}
+	if ws.Name == "" {
+		ws.Name = defaultWatchSetName(ws.Dirs)
 	}
 }
 
+func defaultWatchSetName(dirs []string) string {
+	if len(dirs) == 0 {
+		return "default"
+	}
+	return filepath.Base(dirs[0])
+}
+
 func validate(cfg Config) error {
-	if len(cfg.WatchDirs) == 0 {
-		return errors.New("watchDirs must not be empty")
+	if len(cfg.WatchSets) == 0 {
+		return errors.New("watchSets (or watchDirs) must not be empty")
 	}
-	for _, dir := range cfg.WatchDirs {
-		info, err := os.Stat(dir)
-		if err != nil {
-			return fmt.Errorf("watchDir %q: %w", dir, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("watchDir %q is not a directory", dir)
-		}
-	}
-	if cfg.DebounceSec < 1 {
-		return errors.New("debounceSec must be >= 1")
-	}
+
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return errors.New("port must be between 1 and 65535")
-	}
-	if cfg.MaxFileSize < 1 {
-		return errors.New("maxFileSize must be >= 1")
-	}
-	if cfg.MaxSnapshots < 0 {
-		return errors.New("maxSnapshots must be >= 0")
 	}
 	if cfg.BasicAuth != nil {
 		if cfg.BasicAuth.Username == "" {
@@ -110,6 +169,45 @@ func validate(cfg Config) error {
 			return errors.New("basicAuth.password must not be empty when basicAuth is configured")
 		}
 	}
+
+	nameSet := make(map[string]struct{})
+	dirSet := make(map[string]struct{})
+
+	for i, ws := range cfg.WatchSets {
+		if len(ws.Dirs) == 0 {
+			return fmt.Errorf("watchSets[%d].dirs must not be empty", i)
+		}
+		if ws.DebounceSec < 1 {
+			return fmt.Errorf("watchSets[%d].debounceSec must be >= 1", i)
+		}
+		if ws.MaxFileSize < 1 {
+			return fmt.Errorf("watchSets[%d].maxFileSize must be >= 1", i)
+		}
+		if ws.MaxSnapshots < 0 {
+			return fmt.Errorf("watchSets[%d].maxSnapshots must be >= 0", i)
+		}
+
+		if _, exists := nameSet[ws.Name]; exists {
+			return fmt.Errorf("duplicate watchSet name %q", ws.Name)
+		}
+		nameSet[ws.Name] = struct{}{}
+
+		for _, dir := range ws.Dirs {
+			if _, exists := dirSet[dir]; exists {
+				return fmt.Errorf("directory %q appears in multiple watchSets", dir)
+			}
+			dirSet[dir] = struct{}{}
+
+			info, err := os.Stat(dir)
+			if err != nil {
+				return fmt.Errorf("watchSet %q dir %q: %w", ws.Name, dir, err)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("watchSet %q dir %q is not a directory", ws.Name, dir)
+			}
+		}
+	}
+
 	return nil
 }
 
