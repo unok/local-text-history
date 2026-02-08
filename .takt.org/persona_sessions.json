@@ -1,0 +1,17 @@
+{
+  "personaSessions": {
+    "../personas/planner.md": "7ca12bee-0370-498a-b51f-a4de007c0094",
+    "../personas/architect-planner.md": "f3d76d12-dba5-440a-b213-3e0753f7738d",
+    "../personas/coder.md": "b8a86cbf-4798-40b2-8795-517ff25dc59f",
+    "../personas/ai-antipattern-reviewer.md": "e1a2659a-c34a-4593-9372-32c3a4425a04",
+    "../personas/qa-reviewer.md": "d770bcb6-a2aa-4065-8d87-14d2534b5a61",
+    "../personas/architecture-reviewer.md": "42318b51-f0f9-473e-8b5f-22a3eb998472",
+    "../personas/supervisor.md": "ef8f08f8-04af-46c0-90d7-041d868c2400",
+    "interactive": "3a581795-46a7-4d11-9eca-f1768060a233",
+    "../personas/frontend-reviewer.md": "6ebdec0f-3706-47ac-b1e6-93be15f2fecd",
+    "../personas/security-reviewer.md": "5387e872-87bc-4094-ab29-2b0bf967aeaf",
+    "../personas/codex-reviewer.md": "00a94fe3-da51-4842-ba7d-3b1fdbcd3aad"
+  },
+  "updatedAt": "2026-02-08T08:01:09.090Z",
+  "provider": "claude"
+}
