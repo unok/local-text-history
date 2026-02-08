@@ -439,8 +439,8 @@
   }
 
   & .hljs-title,
-  & .hljs-title\.class_,
-  & .hljs-title\.function_ {
+  & .hljs-title.class_,
+  & .hljs-title.function_ {
     color: #6f42c1;
   }
 
@@ -570,8 +570,8 @@
   }
 
   & .hljs-title,
-  & .hljs-title\.class_,
-  & .hljs-title\.function_ {
+  & .hljs-title.class_,
+  & .hljs-title.function_ {
     color: #d2a8ff;
   }
 

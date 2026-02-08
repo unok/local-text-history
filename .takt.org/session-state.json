@@ -1,7 +1,0 @@
-{
-  "status": "error",
-  "errorMessage": "Movement execution failed: All judgment strategies failed",
-  "timestamp": "2026-02-08T08:14:08.515Z",
-  "pieceName": "expert",
-  "taskContent": "## GitHub Issue #28: DIFF をシンタックスハイライト付きにする\n\nDIFF をシンタックスハイライト付きにする"
-}

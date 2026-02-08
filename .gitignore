@@ -11,6 +11,7 @@ web/dist/
 
 # TAKT
 .takt/
+.takt.org/
 *-review.md
 
 # node_modules (root level, e.g. vitest cache)
