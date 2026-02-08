@@ -12,7 +12,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ query: initialQuery }: DashboardProps) {
-  const { activeWatchSet, tabState, setQuery: setTabQuery, setPage: setTabPage } = useWatchSetState()
+  const { activeWatchSet, tabState, resetVersion, setQuery: setTabQuery, setPage: setTabPage } = useWatchSetState()
   const { data: stats } = useStats()
 
   // When multiple watch sets exist, use tab state; otherwise fall back to local state
@@ -45,6 +45,15 @@ export default function Dashboard({ query: initialQuery }: DashboardProps) {
       setLocalPage(0)
     }
   }, [initialQuery, hasWatchSets])
+
+  const prevResetVersionRef = useRef(resetVersion)
+  useEffect(() => {
+    if (prevResetVersionRef.current !== resetVersion) {
+      prevResetVersionRef.current = resetVersion
+      setLocalPage(0)
+      setLocalQuery('')
+    }
+  }, [resetVersion])
 
   function setPage(p: number) {
     if (hasWatchSets) {
