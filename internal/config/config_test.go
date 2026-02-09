@@ -665,11 +665,31 @@ func TestLoad_LegacyConversionPreservesSettings(t *testing.T) {
 	}
 }
 
-func TestApplyDefaults_DBPath(t *testing.T) {
-	cfg := Config{}
-	applyDefaults(&cfg)
-	if cfg.DBPath != "~/.local/share/local-text-history/history.db" {
-		t.Errorf("default DBPath = %s, want ~/.local/share/local-text-history/history.db", cfg.DBPath)
+func TestLoad_DefaultDBPath(t *testing.T) {
+	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	if err := os.Mkdir(watchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{"watchDirs": ["` + watchDir + `"]}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error: %v", err)
+	}
+	expected := filepath.Join(home, ".local", "share", "local-text-history", "history.db")
+	if cfg.DBPath != expected {
+		t.Errorf("default DBPath = %s, want %s", cfg.DBPath, expected)
 	}
 }
 

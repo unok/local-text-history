@@ -1,5 +1,6 @@
 # Binaries
 /local-text-history
+/file-history
 bin/
 
 # Config (contains personal paths)
