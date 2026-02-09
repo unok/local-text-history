@@ -91,7 +91,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Port = 9876
 	}
 	if cfg.DBPath == "" {
-		cfg.DBPath = "~/.local/share/file-history/history.db"
+		cfg.DBPath = "~/.local/share/local-text-history/history.db"
 	}
 
 	normalizeWatchSets(cfg)

@@ -71,7 +71,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 navigate('/')
               }}
             >
-              File History Tracker
+              Local Text History
             </a>
             {!showTabs && stats?.watchDirs.length === 1 && (
               <span className="text-sm text-gray-400 dark:text-gray-500 font-mono">

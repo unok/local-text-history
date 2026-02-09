@@ -1,6 +1,6 @@
-# File History Tracker
+# Local Text History
 
-File History Tracker は、指定ディレクトリ内のテキストファイルの変更をリアルタイムに検知し、スナップショットとして SQLite に保存するファイル履歴追跡ツールです。Web UI で履歴の検索・差分表示・ファイル復元が可能な単一バイナリです。
+Local Text History は、指定ディレクトリ内のテキストファイルの変更をリアルタイムに検知し、スナップショットとして SQLite に保存するローカルテキスト履歴追跡ツールです。Web UI で履歴の検索・差分表示・ファイル復元が可能な単一バイナリです。
 
 ## 主な機能
 
@@ -33,10 +33,10 @@ Windows はファイルシステム関連の実装が Linux/macOS 固有の API 
 
 ```bash
 # 最新バージョンをダウンロード（Linux x86_64）
-curl -LO https://github.com/unok/local-text-history/releases/latest/download/file-history-linux-amd64.tar.gz
-tar xzf file-history-linux-amd64.tar.gz
-chmod +x file-history
-sudo mv file-history /usr/local/bin/
+curl -LO https://github.com/unok/local-text-history/releases/latest/download/local-text-history-linux-amd64.tar.gz
+tar xzf local-text-history-linux-amd64.tar.gz
+chmod +x local-text-history
+sudo mv local-text-history /usr/local/bin/
 ```
 
 特定バージョンをダウンロードする場合は、バージョン付きファイル名を指定してください。
@@ -44,10 +44,10 @@ sudo mv file-history /usr/local/bin/
 ```bash
 # 例: v0.1.0 を指定してダウンロード
 VERSION=v0.1.0
-curl -LO "https://github.com/unok/local-text-history/releases/download/${VERSION}/file-history-${VERSION}-linux-amd64.tar.gz"
-tar xzf "file-history-${VERSION}-linux-amd64.tar.gz"
-chmod +x file-history
-sudo mv file-history /usr/local/bin/
+curl -LO "https://github.com/unok/local-text-history/releases/download/${VERSION}/local-text-history-${VERSION}-linux-amd64.tar.gz"
+tar xzf "local-text-history-${VERSION}-linux-amd64.tar.gz"
+chmod +x local-text-history
+sudo mv local-text-history /usr/local/bin/
 ```
 
 バイナリは静的リンク（Linux）されており、他のライブラリのインストールは不要です。
@@ -68,13 +68,13 @@ sudo mv file-history /usr/local/bin/
 make build
 ```
 
-生成バイナリ: `bin/file-history`
+生成バイナリ: `bin/local-text-history`
 
 ### 設定ファイルの作成
 
 ```bash
-mkdir -p ~/.config/file-history
-cp config.example.json ~/.config/file-history/config.json
+mkdir -p ~/.config/local-text-history
+cp config.example.json ~/.config/local-text-history/config.json
 ```
 
 `watchDirs` を監視したいディレクトリに変更してください。
@@ -82,7 +82,7 @@ cp config.example.json ~/.config/file-history/config.json
 ### 起動
 
 ```bash
-./bin/file-history --config ~/.config/file-history/config.json
+./bin/local-text-history --config ~/.config/local-text-history/config.json
 ```
 
 ブラウザで `http://localhost:9876` を開きます。
@@ -90,14 +90,14 @@ cp config.example.json ~/.config/file-history/config.json
 ### systemd で自動起動（ユーザーモード）
 
 ```bash
-cp bin/file-history ~/.local/bin/
-cp file-history.service ~/.config/systemd/user/
-systemctl --user enable --now file-history
+cp bin/local-text-history ~/.local/bin/
+cp local-text-history.service ~/.config/systemd/user/
+systemctl --user enable --now local-text-history
 ```
 
 systemd ユニットファイルはホームディレクトリ（`%h`）内のパスを参照します:
-- バイナリ: `~/.local/bin/file-history`
-- 設定: `~/.config/file-history/config.json`
+- バイナリ: `~/.local/bin/local-text-history`
+- 設定: `~/.config/local-text-history/config.json`
 
 ## 設定リファレンス
 
@@ -107,7 +107,7 @@ systemd ユニットファイルはホームディレクトリ（`%h`）内の�
 | `debounceSec` | `int` | `2` | デバウンス秒数（ファイルごと独立） |
 | `bindAddress` | `string` | `0.0.0.0` | HTTP サーバーのバインドアドレス |
 | `port` | `int` | `9876` | HTTP サーバーポート |
-| `dbPath` | `string` | `~/.local/share/file-history/history.db` | SQLite データベースパス |
+| `dbPath` | `string` | `~/.local/share/local-text-history/history.db` | SQLite データベースパス |
 | `extensions` | `string[]` | （未指定） | 監視対象の拡張子。未指定時はバイナリ判定のみで全テキストファイルを監視 |
 | `excludePatterns` | `string[]` | （下記参照） | 除外パターン（`**` 対応） |
 | `maxFileSize` | `int` | `1048576` | 最大ファイルサイズ（バイト） |
@@ -168,7 +168,7 @@ systemd ユニットファイルはホームディレクトリ（`%h`）内の�
 cd web && npm run dev
 
 # Go サーバー起動（別ターミナル）
-go run ./cmd/file-history --config config.example.json
+go run ./cmd/local-text-history --config config.example.json
 
 # テスト実行
 make test          # Go テスト

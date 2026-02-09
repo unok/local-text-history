@@ -665,6 +665,14 @@ func TestLoad_LegacyConversionPreservesSettings(t *testing.T) {
 	}
 }
 
+func TestApplyDefaults_DBPath(t *testing.T) {
+	cfg := Config{}
+	applyDefaults(&cfg)
+	if cfg.DBPath != "~/.local/share/local-text-history/history.db" {
+		t.Errorf("default DBPath = %s, want ~/.local/share/local-text-history/history.db", cfg.DBPath)
+	}
+}
+
 func TestAllWatchDirs(t *testing.T) {
 	cfg := Config{
 		WatchSets: []WatchSet{

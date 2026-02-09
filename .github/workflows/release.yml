@@ -35,18 +35,18 @@ jobs:
       - name: Package archive
         run: |
           mkdir -p release-staging
-          cp bin/file-history-linux-amd64 release-staging/file-history
+          cp bin/local-text-history-linux-amd64 release-staging/local-text-history
           cp config.example.json release-staging/
-          cp file-history.service release-staging/
-          tar -czf file-history-${{ github.ref_name }}-linux-amd64.tar.gz -C release-staging .
-          cp file-history-${{ github.ref_name }}-linux-amd64.tar.gz file-history-linux-amd64.tar.gz
+          cp local-text-history.service release-staging/
+          tar -czf local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz -C release-staging .
+          cp local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz local-text-history-linux-amd64.tar.gz
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: file-history-linux-amd64
+          name: local-text-history-linux-amd64
           path: |
-            file-history-${{ github.ref_name }}-linux-amd64.tar.gz
-            file-history-linux-amd64.tar.gz
+            local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz
+            local-text-history-linux-amd64.tar.gz
 
   build-linux-arm64:
     name: Build Linux arm64
@@ -77,18 +77,18 @@ jobs:
       - name: Package archive
         run: |
           mkdir -p release-staging
-          cp bin/file-history-linux-arm64 release-staging/file-history
+          cp bin/local-text-history-linux-arm64 release-staging/local-text-history
           cp config.example.json release-staging/
-          cp file-history.service release-staging/
-          tar -czf file-history-${{ github.ref_name }}-linux-arm64.tar.gz -C release-staging .
-          cp file-history-${{ github.ref_name }}-linux-arm64.tar.gz file-history-linux-arm64.tar.gz
+          cp local-text-history.service release-staging/
+          tar -czf local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz -C release-staging .
+          cp local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz local-text-history-linux-arm64.tar.gz
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: file-history-linux-arm64
+          name: local-text-history-linux-arm64
           path: |
-            file-history-${{ github.ref_name }}-linux-arm64.tar.gz
-            file-history-linux-arm64.tar.gz
+            local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz
+            local-text-history-linux-arm64.tar.gz
 
   build-darwin-arm64:
     name: Build macOS arm64
@@ -116,17 +116,17 @@ jobs:
       - name: Package archive
         run: |
           mkdir -p release-staging
-          cp bin/file-history-darwin-arm64 release-staging/file-history
+          cp bin/local-text-history-darwin-arm64 release-staging/local-text-history
           cp config.example.json release-staging/
-          tar -czf file-history-${{ github.ref_name }}-darwin-arm64.tar.gz -C release-staging .
-          cp file-history-${{ github.ref_name }}-darwin-arm64.tar.gz file-history-darwin-arm64.tar.gz
+          tar -czf local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz -C release-staging .
+          cp local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz local-text-history-darwin-arm64.tar.gz
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: file-history-darwin-arm64
+          name: local-text-history-darwin-arm64
           path: |
-            file-history-${{ github.ref_name }}-darwin-arm64.tar.gz
-            file-history-darwin-arm64.tar.gz
+            local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz
+            local-text-history-darwin-arm64.tar.gz
 
   release:
     name: Create Release
@@ -147,9 +147,9 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/file-history-linux-amd64/file-history-${{ github.ref_name }}-linux-amd64.tar.gz \
-            artifacts/file-history-linux-amd64/file-history-linux-amd64.tar.gz \
-            artifacts/file-history-linux-arm64/file-history-${{ github.ref_name }}-linux-arm64.tar.gz \
-            artifacts/file-history-linux-arm64/file-history-linux-arm64.tar.gz \
-            artifacts/file-history-darwin-arm64/file-history-${{ github.ref_name }}-darwin-arm64.tar.gz \
-            artifacts/file-history-darwin-arm64/file-history-darwin-arm64.tar.gz
+            artifacts/local-text-history-linux-amd64/local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz \
+            artifacts/local-text-history-linux-amd64/local-text-history-linux-amd64.tar.gz \
+            artifacts/local-text-history-linux-arm64/local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz \
+            artifacts/local-text-history-linux-arm64/local-text-history-linux-arm64.tar.gz \
+            artifacts/local-text-history-darwin-arm64/local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz \
+            artifacts/local-text-history-darwin-arm64/local-text-history-darwin-arm64.tar.gz
