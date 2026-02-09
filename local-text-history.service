@@ -1,0 +1,12 @@
+[Unit]
+Description=Local Text History
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/local-text-history --config %h/.config/local-text-history/config.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

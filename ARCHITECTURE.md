@@ -1,12 +1,12 @@
 # Architecture
 
-File History Tracker の内部構造に関する開発者向けドキュメントです。
+Local Text History の内部構造に関する開発者向けドキュメントです。
 
 ## 全体アーキテクチャ
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  file-history（単一バイナリ）                          │
+│  local-text-history（単一バイナリ）                      │
 │                                                      │
 │  ┌────────────┐  ┌──────────┐  ┌──────────────────┐ │
 │  │ fsnotify   │→ │ Debounce │→ │ SQLite           │ │
@@ -34,7 +34,7 @@ File History Tracker の内部構造に関する開発者向けドキュメン�
 ```
 local-text-history/
 ├── cmd/
-│   └── file-history/
+│   └── local-text-history/
 │       └── main.go              # エントリポイント（CLI 引数パース、起動）
 ├── internal/
 │   ├── config/
@@ -84,7 +84,7 @@ local-text-history/
 ├── go.sum
 ├── Makefile                     # ビルド: web build → go build
 ├── config.example.json
-└── file-history.service         # systemd ユーザーモードユニットファイル
+└── local-text-history.service   # systemd ユーザーモードユニットファイル
 ```
 
 ## 主要な設計判断

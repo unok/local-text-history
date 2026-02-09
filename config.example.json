@@ -10,5 +10,5 @@
     }
   ],
   "port": 9876,
-  "dbPath": "~/.local/share/file-history/history.db"
+  "dbPath": "~/.local/share/local-text-history/history.db"
 }

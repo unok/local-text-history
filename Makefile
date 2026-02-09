@@ -11,11 +11,11 @@ web-build:
 
 go-build:
 	mkdir -p bin
-	CGO_ENABLED=1 go build -o bin/file-history ./cmd/file-history
+	CGO_ENABLED=1 go build -o bin/local-text-history ./cmd/local-text-history
 
 dev:
 	cd web && npm run dev &
-	go run ./cmd/file-history --config config.example.json
+	go run ./cmd/local-text-history --config config.example.json
 
 clean:
 	rm -rf bin/ web/dist/
@@ -27,16 +27,16 @@ build-release-linux-amd64:
 	mkdir -p bin
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC=gcc \
 		go build -ldflags '$(LDFLAGS) -extldflags "-static"' \
-		-o bin/file-history-linux-amd64 ./cmd/file-history
+		-o bin/local-text-history-linux-amd64 ./cmd/local-text-history
 
 build-release-linux-arm64:
 	mkdir -p bin
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
 		go build -ldflags '$(LDFLAGS) -extldflags "-static"' \
-		-o bin/file-history-linux-arm64 ./cmd/file-history
+		-o bin/local-text-history-linux-arm64 ./cmd/local-text-history
 
 build-release-darwin-arm64:
 	mkdir -p bin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
 		go build -ldflags '$(LDFLAGS)' \
-		-o bin/file-history-darwin-arm64 ./cmd/file-history
+		-o bin/local-text-history-darwin-arm64 ./cmd/local-text-history
