@@ -41,7 +41,7 @@ jobs:
           tar -czf local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz -C release-staging .
           cp local-text-history-${{ github.ref_name }}-linux-amd64.tar.gz local-text-history-linux-amd64.tar.gz
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: local-text-history-linux-amd64
           path: |
@@ -83,7 +83,7 @@ jobs:
           tar -czf local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz -C release-staging .
           cp local-text-history-${{ github.ref_name }}-linux-arm64.tar.gz local-text-history-linux-arm64.tar.gz
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: local-text-history-linux-arm64
           path: |
@@ -121,7 +121,7 @@ jobs:
           tar -czf local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz -C release-staging .
           cp local-text-history-${{ github.ref_name }}-darwin-arm64.tar.gz local-text-history-darwin-arm64.tar.gz
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: local-text-history-darwin-arm64
           path: |
