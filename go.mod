@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.3
 	github.com/mattn/go-sqlite3 v1.14.44
