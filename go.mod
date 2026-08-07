@@ -7,7 +7,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.19.0
-	github.com/mattn/go-sqlite3 v1.14.47
+	github.com/mattn/go-sqlite3 v1.14.49
 	github.com/sergi/go-diff v1.4.0
 )
 
