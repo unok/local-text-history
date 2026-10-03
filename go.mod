@@ -1,6 +1,6 @@
 module github.com/unok/local-text-history
 
-go 1.25.5
+go 1.26.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.2
@@ -11,4 +11,4 @@ require (
 	github.com/sergi/go-diff v1.4.0
 )
 
-require golang.org/x/sys v0.47.0
+require golang.org/x/sys v0.48.0
