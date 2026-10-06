@@ -881,7 +881,10 @@ func TestScanExistingFiles_RespectsFilters(t *testing.T) {
 
 func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	watchDir := t.TempDir()
-	dir := t.TempDir()
+	dir := filepath.Join(watchDir, "inner")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create some files in the directory
 	for i := range 3 {
@@ -891,10 +894,10 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 		}
 	}
 
-	var scanCount atomic.Int32
+	var scanCount int
 
 	saver := func(path string, content []byte, maxSnapshots int) (bool, error) {
-		scanCount.Add(1)
+		scanCount++
 		return true, nil
 	}
 
@@ -906,8 +909,8 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	}
 	defer w.Close()
 
-	done := make(chan struct{})
-	go w.Run(done)
+	// Exercise scans without the event loop: directory Create events would
+	// otherwise trigger an independent scan. Process queued saves synchronously.
 
 	// Pre-register the directory as scanning to verify duplicate rejection
 	if !w.tryStartScan(dir) {
@@ -916,11 +919,9 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 
 	// Second call should be rejected while first is active
 	w.scanExistingFiles(dir)
+	w.processBatch(w.drainAll())
 
-	// Wait briefly for save worker
-	time.Sleep(200 * time.Millisecond)
-
-	got := scanCount.Load()
+	got := scanCount
 	if got != 0 {
 		t.Errorf("duplicate scan: got %d saves, want 0 (scan should be skipped)", got)
 	}
@@ -928,26 +929,11 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	// Clean up the pre-registered entry
 	w.finishScan(dir)
 
-	// Now a real scan should work
-	// Note: dir is outside the WatchSet dirs, so shouldTrack will return false.
-	// We need to scan a dir inside the WatchSet for files to be tracked.
-	innerDir := filepath.Join(watchDir, "inner")
-	if err := os.MkdirAll(innerDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for i := range 3 {
-		f := filepath.Join(innerDir, fmt.Sprintf("file%d.go", i))
-		if err := os.WriteFile(f, []byte(fmt.Sprintf("package f%d", i)), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// After finishing, the same directory should be scanned again.
+	w.scanExistingFiles(dir)
+	w.processBatch(w.drainAll())
 
-	w.scanExistingFiles(innerDir)
-
-	time.Sleep(500 * time.Millisecond)
-	close(done)
-
-	got = scanCount.Load()
+	got = scanCount
 	if got != 3 {
 		t.Errorf("after finish: got %d saves, want 3", got)
 	}
