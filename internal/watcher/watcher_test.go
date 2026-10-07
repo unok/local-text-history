@@ -894,10 +894,10 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 		}
 	}
 
-	var scanCount int
+	savedPaths := make(map[string]int)
 
 	saver := func(path string, content []byte, maxSnapshots int) (bool, error) {
-		scanCount++
+		savedPaths[path]++
 		return true, nil
 	}
 
@@ -909,8 +909,8 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	}
 	defer w.Close()
 
-	// Exercise scans without the event loop: directory Create events would
-	// otherwise trigger an independent scan. Process queued saves synchronously.
+	// Process queued saves synchronously instead of starting Run, so save counts
+	// are deterministic without sleeps.
 
 	// Pre-register the directory as scanning to verify duplicate rejection
 	if !w.tryStartScan(dir) {
@@ -921,9 +921,15 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	w.scanExistingFiles(dir)
 	w.processBatch(w.drainAll())
 
-	got := scanCount
+	got := 0
+	for _, count := range savedPaths {
+		got += count
+	}
 	if got != 0 {
 		t.Errorf("duplicate scan: got %d saves, want 0 (scan should be skipped)", got)
+	}
+	if w.tryStartScan(dir) {
+		t.Error("tryStartScan should reject directory while scan is active")
 	}
 
 	// Clean up the pre-registered entry
@@ -933,9 +939,23 @@ func TestScanExistingFiles_NoDuplicateScan(t *testing.T) {
 	w.scanExistingFiles(dir)
 	w.processBatch(w.drainAll())
 
-	got = scanCount
+	got = 0
+	for _, count := range savedPaths {
+		got += count
+	}
 	if got != 3 {
 		t.Errorf("after finish: got %d saves, want 3", got)
+	}
+	for i := range 3 {
+		path := filepath.Join(dir, fmt.Sprintf("file%d.go", i))
+		if count := savedPaths[path]; count != 1 {
+			t.Errorf("after finish: %s saved %d times, want 1", filepath.Base(path), count)
+		}
+	}
+	if !w.tryStartScan(dir) {
+		t.Error("tryStartScan should succeed after scan is finished")
+	} else {
+		w.finishScan(dir)
 	}
 }
 
