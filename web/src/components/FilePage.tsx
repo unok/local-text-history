@@ -152,8 +152,8 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="lg:w-[300px] lg:shrink-0">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
             Snapshots
           </h3>
@@ -250,7 +250,7 @@ export default function FilePage({ fileId, fromId, toId }: FilePageProps) {
           )}
         </div>
 
-        <div className="lg:col-span-2 min-w-0">
+        <div className="flex-1 min-w-0">
           {hasDiff ? (
             <DiffView fromId={resolvedFromId} toId={resolvedToId} />
           ) : (

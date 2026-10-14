@@ -60,7 +60,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <a
               href="/"
@@ -112,7 +112,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </header>
       {showTabs && (
         <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <div className="max-w-7xl mx-auto px-4 flex gap-1 py-1">
+          <div className="px-4 flex gap-1 py-1">
             {watchSets.map((ws) => (
               <button
                 key={ws.name}
@@ -130,7 +130,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       )}
-      <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+      <main className="px-4 py-6">{children}</main>
     </div>
   )
 }
