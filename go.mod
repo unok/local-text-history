@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.20.4
 	github.com/mattn/go-sqlite3 v1.14.53
-	github.com/sergi/go-diff v1.4.0
+	github.com/sergi/go-diff v1.4.4
 )
 
 require golang.org/x/sys v0.50.0
